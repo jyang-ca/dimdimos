@@ -235,6 +235,8 @@ class GO2Connection(Module, spec.Camera, spec.Pointcloud):
         self._disposables.add(self.connection.lidar_stream().subscribe(self.lidar.publish))
         self._disposables.add(self.connection.odom_stream().subscribe(self._publish_tf))
         self._disposables.add(self.connection.video_stream().subscribe(onimage))
+        # 내비게이션 모듈로부터 오는 속도 명령(cmd_vel)을 수신하면 self.move를 실행함
+        # self.move(twist) -> self.connection.move(twist, duration) -> (case 별로 connection 분기를 타게 됨.) -> 실물 로봇인 경우에는 UnitreeWebRTCConnection.move()
         self._disposables.add(Disposable(self.cmd_vel.subscribe(self.move)))
 
         self._camera_info_thread = Thread(

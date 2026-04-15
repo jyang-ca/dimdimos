@@ -132,8 +132,8 @@ class UnitreeWebRTCConnection(Resource):
             try:
                 # Send stop command directly since we're already in the event loop.
                 self.conn.datachannel.pub_sub.publish_without_callback(
-                    RTC_TOPIC["WIRELESS_CONTROLLER"],
-                    data={"lx": 0, "ly": 0, "rx": 0, "ry": 0},
+                    RTC_TOPIC["WIRELESS_CONTROLLER"], # "조이스틱 신호로 보내줘"
+                    data={"lx": 0, "ly": 0, "rx": 0, "ry": 0}, # 변환된 값
                 )
                 await self.conn.disconnect()
             except Exception:
@@ -157,6 +157,7 @@ class UnitreeWebRTCConnection(Resource):
         Returns:
             bool: True if command was sent successfully
         """
+        # move1. 전달받은 Twist 값을 x(직진), y(측면이동), yaw(회전) 값으로 분리합니다.
         x, y, yaw = twist.linear.x, twist.linear.y, twist.angular.z
 
         # WebRTC coordinate mapping:
@@ -164,6 +165,9 @@ class UnitreeWebRTCConnection(Resource):
         # y - positive forward, negative backwards
         # yaw - Positive rotate right, negative rotate left
         async def async_move() -> None:
+            # move2. DimOS의 기준 축(x가 전방)을 Unitree WebRTC 조이스틱 기준 축으로 변환합니다.
+            # Unitree SDK는 가상의 조이스틱 값을 받습니다:
+            # lx(왼쪽스틱 좌우/게 잡이), ly(왼쪽스틱 상하/직진), rx(오른쪽스틱 좌우/회전)
             self.conn.datachannel.pub_sub.publish_without_callback(
                 RTC_TOPIC["WIRELESS_CONTROLLER"],
                 data={"lx": -y, "ly": x, "rx": -yaw, "ry": 0},

@@ -59,6 +59,8 @@ class McpAdapter:
         if url is None:
             from dimos.core.global_config import global_config
 
+            # 이 주소로 명령을 보낼 준비를 합니다. (mcp_adapter -> mcp_server)
+            # tool/call로 요청을 보내면, mcp_server의 _handle_tools_call에서 요청을 핸들링.
             url = f"http://localhost:{global_config.mcp_port}/mcp"
         self.url = url
         self.timeout = timeout

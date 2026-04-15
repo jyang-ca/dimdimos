@@ -145,6 +145,7 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
 
         module_list = list(self._deployed_modules.values())
         for module in modules:
+            # 모듈이 on_system_modules 메서드를 가지고 있다면, 시스템 모듈 목록을 전달.
             if hasattr(module, "on_system_modules"):
                 module.on_system_modules(module_list)
 

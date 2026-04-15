@@ -124,6 +124,7 @@ class GlobalPlanner(Resource):
             self._current_goal = goal
             self._goal_reached = False
         self._replan_limiter.reset()
+        # _plan_path 실행
         self._plan_path()
 
     def cancel_goal(self, *, but_will_try_again: bool = False, arrived: bool = False) -> None:
@@ -152,6 +153,8 @@ class GlobalPlanner(Resource):
 
     @property
     def cmd_vel(self) -> Subject[Twist]:
+        # 로컬 플래너가 계산한 속도를 반환
+        # module.py에 있는 self.cmd_vel.publish가 실행됨.
         return self._local_planner.cmd_vel
 
     @property
@@ -293,6 +296,7 @@ class GlobalPlanner(Resource):
         if not safe_goal:
             return
 
+        # 로봇이 지나가기에 충분히 넓고 안전한 길을 찾기 위한 탐색 및 가중치 지도 생성
         path = self._find_wide_path(safe_goal, current_odom.position)
 
         if not path:
@@ -301,10 +305,13 @@ class GlobalPlanner(Resource):
             )
             return
 
+        # 계산된 경로(resampled_path)를 로컬 플래너에게 전달
         resampled_path = smooth_resample_path(path, current_goal, 0.1)
 
+        # 리액티브 스트림에 새로운 경로를 실어 보내면서 시각화 도구에 경로를 전달.
         self.path.on_next(resampled_path)
 
+        # 계산된 경로(resampled_path)를 로컬 플래너에게 전달.
         self._local_planner.start_planning(resampled_path)
 
     def _find_wide_path(self, goal: Vector3, robot_pos: Vector3) -> Path | None:
@@ -313,6 +320,7 @@ class GlobalPlanner(Resource):
 
         for size in sizes_to_try:
             costmap = self._navigation_map.make_gradient_costmap(size)
+            # min_cost_astar 알고리즘을 통해 경로 탐색
             path = min_cost_astar(costmap, goal, robot_pos)
             if path and path.poses:
                 logger.info(f"Found path {size}x robot width.")

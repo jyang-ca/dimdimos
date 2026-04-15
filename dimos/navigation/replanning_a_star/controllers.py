@@ -52,6 +52,7 @@ class PController:
 
     def advance(self, lookahead_point: NDArray[np.float64], current_odom: PoseStamped) -> Twist:
         current_pos = np.array([current_odom.position.x, current_odom.position.y])
+        # 1. 목표점까지의 방향과 거리를 구합니다.
         direction = lookahead_point - current_pos
         distance = np.linalg.norm(direction)
 
@@ -61,18 +62,24 @@ class PController:
 
         robot_yaw = current_odom.orientation.euler[2]
         desired_yaw = np.arctan2(direction[1], direction[0])
+        # 2. 로봇이 현재 바라보는 방향(robot_yaw)과 
+        #    목표점을 향해 바라봐야 할 방향(desired_yaw)의 차이(오차)를 구합니다.
         yaw_error = angle_diff(desired_yaw, robot_yaw)
 
+        # 3. 오차에 비례하여 "얼마나 세게 핸들을 꺾을지" 회전 속도를 계산합니다. (k_angular 오차 증폭)
         angular_velocity = self._compute_angular_velocity(yaw_error)
 
         # Rotate-then-drive: if heading error is large, rotate in place first
+        # 4. 방향의 오차가 너무 크면 제자리에서 먼저 돌기만 합니다.
         if abs(yaw_error) > self._rotation_threshold:
             return self._angular_twist(angular_velocity)
 
         # When aligned, drive forward with proportional angular correction
+        # 5. 방향이 얼추 맞으면 엑셀을 밟습니다. (오차가 적을수록 직진 속도를 빠르게)
         linear_velocity = self._speed * (1.0 - abs(yaw_error) / self._rotation_threshold)
         linear_velocity = self._apply_min_velocity(linear_velocity, self._min_linear_velocity)
 
+        # 최종적으로 계산된 모터 제어 명령(Twist)을 반환합니다.
         return Twist(
             linear=Vector3(linear_velocity, 0.0, 0.0),
             angular=Vector3(0.0, 0.0, angular_velocity),

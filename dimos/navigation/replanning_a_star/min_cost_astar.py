@@ -167,7 +167,9 @@ def min_cost_astar(
     h_dist = _heuristic(start_tuple[0], start_tuple[1], goal_tuple[0], goal_tuple[1])
     heapq.heappush(open_set, (0.0, h_dist, start_tuple))
 
+    # 핵심 루프
     while open_set:
+        # 가장 유망한 칸 선택
         _, _, current = heapq.heappop(open_set)
         current_x, current_y = current
 
@@ -175,10 +177,12 @@ def min_cost_astar(
             continue
 
         if current == goal_tuple:
+            # 목적지에 도달하면 경로 반환
             return _reconstruct_path(parents, current, costmap, start_tuple, goal_tuple)
 
         closed_set.add(current)
 
+        # 주변 8방향 탐색
         for i, (dx, dy) in enumerate(_directions):
             neighbor_x, neighbor_y = current_x + dx, current_y + dy
             neighbor = (neighbor_x, neighbor_y)
@@ -191,6 +195,9 @@ def min_cost_astar(
 
             neighbor_val = costmap.grid[neighbor_y, neighbor_x]
 
+
+            # 장애물이 아니면, 해당 칸으로 이동하는 비용(거리+장애물 인접도) 계산
+
             if neighbor_val >= cost_threshold:
                 continue
 
@@ -202,6 +209,7 @@ def min_cost_astar(
             else:
                 cell_cost = neighbor_val
 
+            # 더 짧은 경로면 업데이트
             tentative_cost = cost_score[current] + cell_cost
             tentative_dist = dist_score[current] + _movement_costs[i]
 

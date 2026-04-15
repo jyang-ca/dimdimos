@@ -75,6 +75,7 @@ class _BlueprintAtom:
             if c.__module__ in sys.modules:
                 globalns.update(sys.modules[c.__module__].__dict__)
         try:
+            # 모듈에 정의되어 있는 In/Out, Spec, ModuleRef를 가져옴.
             all_annotations = get_type_hints(module, globalns=globalns)
         except Exception:
             # Fallback to raw annotations if get_type_hints fails.
@@ -83,6 +84,7 @@ class _BlueprintAtom:
                 if hasattr(base_class, "__annotations__"):
                     all_annotations.update(base_class.__annotations__)
 
+        # In/Out, Spec, ModuleRef를 순회하며 스트림 객체를 생성하여 streams에 추가.
         for name, annotation in all_annotations.items():
             origin = get_origin(annotation)
             # Streams
@@ -158,6 +160,7 @@ class Blueprint:
         if not self.disabled_modules_tuple:
             return self.blueprints
         disabled = set(self.disabled_modules_tuple)
+        # 전체 모듈(self.blueprints) 중 disabled 리스트에 없는 것만 골라냄.
         return tuple(bp for bp in self.blueprints if bp.module not in disabled)
 
     def _check_ambiguity(
@@ -312,7 +315,17 @@ class Blueprint:
                 )
 
     def _connect_module_refs(self, module_coordinator: ModuleCoordinator) -> None:
-        # partly fill out the mod_and_mod_ref_to_proxy
+        # partly fill out the mod_and_mod_ref_to_proxy 
+        """
+        remapping_map에 정보가 들어가는 과정은 사용자가 설계도(Blueprint)에서 .remappings() 메서드를 호출할 때 발생합니다.
+        이때 전달하는 튜플(tuple)의 세 번째 인자가 무엇이냐에 따라 A와 B가 결정됩니다.
+        # A: 스트림 이름 변경 (세 번째 인자가 문자열 'str')
+        (CameraModule, "image", "/world/camera_image"),
+        
+        # B: 모듈 참조 변경 (세 번째 인자가 클래스 타입 'type')
+        (AgentModule, "_navigator", AStarPlanner)
+        """
+        # 이 코드는 모듈 간의 전역적인 "자동 연결" 규칙을 사용자가 수동으로 덮어쓸(Override) 준비를 하는 과정입니다.
         mod_and_mod_ref_to_proxy = {
             (module, name): replacement
             for (module, name), replacement in self.remapping_map.items()
@@ -323,6 +336,7 @@ class Blueprint:
         for blueprint in self._active_blueprints:
             for each_module_ref in blueprint.module_refs:
                 # we've got to find a another module that implements this spec
+                # "찾아야 할 기준"을 설정. 수동 예약 명부에 있으면 그 클래스를 쓰고, 없으면 모듈 클래스에 정의된 **기본 인터페이스(Spec)**를 기준으로 삼음.
                 spec = mod_and_mod_ref_to_proxy.get(
                     (blueprint.module, each_module_ref.name), each_module_ref.spec
                 )
@@ -338,6 +352,7 @@ class Blueprint:
                     for each_other_blueprint in self._active_blueprints
                     if (
                         each_other_blueprint != blueprint
+                        # 이 모듈이 인터페이스(spec)에 적힌 함수들(이름)을 다 가지고 있고, 인자와 반환 타입이 일치하는지 확인
                         and spec_structural_compliance(each_other_blueprint.module, spec)
                     )
                 ]
@@ -347,12 +362,12 @@ class Blueprint:
                     for each_candidate in possible_module_candidates
                     if spec_annotation_compliance(each_candidate, spec)
                 ]
-                # none
+                # none (에러 발생! "이 인터페이스가 꼭 필요한데, 수행할 수 있는 모듈이 아무도 없어!" 라며 중단합니다.)
                 if len(possible_module_candidates) == 0:
                     raise Exception(
                         f"""The {blueprint.module.__name__} has a module reference ({each_module_ref}) which requested a module that fills out the {each_module_ref.spec.__name__} spec. But I couldn't find a module that met that spec.\n"""
                     )
-                # exactly one structurally valid candidate
+                # exactly one structurally valid candidate (성공! 해당 모듈을 파트너로 확정하고 장부에 기록합니다.)
                 elif len(possible_module_candidates) == 1:
                     if len(valid_module_candidates) == 0:
                         logger.warning(
@@ -362,12 +377,12 @@ class Blueprint:
                         possible_module_candidates[0]
                     )
                     continue
-                # more than one
+                # more than one (모호성 에러 발생! "후보가 너무 많아서 내가 고를 수 없어! 설계도(remappings)에서 직접 하나를 골라줘!"라고 요청합니다.)
                 elif len(valid_module_candidates) > 1:
                     raise Exception(
                         f"""The {blueprint.module.__name__} has a module reference ({each_module_ref}) which requested a module that fills out the {each_module_ref.spec.__name__} spec. But I found multiple modules that met that spec: {possible_module_candidates}.\nTo fix this use .remappings, for example:\n    autoconnect(...).remappings([ ({blueprint.module.__name__}, {each_module_ref.name!r}, <ModuleThatHasTheRpcCalls>) ])\n"""
                     )
-                # structural candidates, but no valid candidates
+                # structural candidates, but no valid candidates (경고! "구조는 맞는데 타입이 안 맞아!" 경고를 띄우고 넘어갑니다.)
                 elif len(valid_module_candidates) == 0:
                     possible_module_candidates_str = ", ".join(
                         [each_candidate.__name__ for each_candidate in possible_module_candidates]
@@ -393,11 +408,16 @@ class Blueprint:
             # Ensure the remote module instance can use the module ref inside its own RPC handlers.
             base_module_proxy.set_module_ref(module_ref_name, target_module_proxy)
 
+    # 특정 모듈이 @rpc로 선언한 함수들을 전체 시스템의 "공용 함수 목록"에 등록합니다. 그리고 다른 모듈이 그 함수를 필요로 할 때(예: set_ 패턴 등), 해당 함수의 **실행 권한(Proxy)**을 넘겨줍니다.
     def _connect_rpc_methods(self, module_coordinator: ModuleCoordinator) -> None:
         # Gather all RPC methods.
         rpc_methods = {}
         rpc_methods_dot = {}
 
+        # 구형 방식: Navigator_set_goal
+        # 신형 방식: Navigator.set_goal
+        # 현재 위 두 방식을 모두 쓰느건 과도기적인 패턴
+        # 어떤 클래스에서 어떤 메서드를 쓰는지 구분하기 위해 네이밍을 설정해주는 로직
         # Track interface methods to detect ambiguity.
         interface_methods: defaultdict[str, list[tuple[type[Module], Callable[..., Any]]]] = (
             defaultdict(list)
@@ -452,6 +472,7 @@ class Blueprint:
 
                 linked_name = method_name.removeprefix("set_")
 
+                # autoconnect로 연결한 모듈 중에서 동일한 인터페이스를 가진 모듈이 두개 이상 있으면 에러 발생
                 self._check_ambiguity(linked_name, interface_methods, blueprint.module)
 
                 if linked_name not in rpc_methods:
@@ -459,6 +480,7 @@ class Blueprint:
 
                 getattr(instance, method_name)(rpc_methods[linked_name])
 
+            # 신형 방식 "_dot"에 맞게 다시 연결
             for requested_method_name in instance.get_rpc_method_names():  # type: ignore[union-attr]
                 self._check_ambiguity(
                     requested_method_name, interface_methods_dot, blueprint.module
@@ -476,6 +498,7 @@ class Blueprint:
         cli_config_overrides: Mapping[str, Any] | None = None,
     ) -> ModuleCoordinator:
         logger.info("Building the blueprint")
+        # cli 인자로 넘긴 값들이 override 됨.
         global_config.update(**dict(self.global_config_overrides))
         if cli_config_overrides:
             global_config.update(**dict(cli_config_overrides))
@@ -489,9 +512,24 @@ class Blueprint:
         module_coordinator.start()
 
         # all module constructors are called here (each of them setup their own)
+        # 모듈의 프로세스를 띄우는 객체를 생성 (모든 모듈의 생성자가 여기서 호출됨.)
         self._deploy_all_modules(module_coordinator, global_config)
+        
+        # 모듈 간의 데이터 통로(In, Out)를 연결. 
+        # 스트림 연결 (In, Out)에 비약이 존재하는 경우, 오류가 발생하지는 않지만, 아무 동작도 하지 않는 상태가 됨.
         self._connect_streams(module_coordinator)
+        
+        # [Legacy] 개별 RPC 메서드 연결
+        # dimos run으로 시스템이 시작되면, 각 모듈(예: 라이다 모듈, 제어 모듈)은 서로 **완전히 다른 프로세스(Workers)**에서 실행됩니다. 파이썬에서 다른 프로세스에 있는 객체의 함수를 직접 실행하는 것은 불가능하기 때문에, 프로세스 간에 **"메시지"**를 주고받아 함수를 실행시켜야 합니다. 이 기술이 바로 RPC입니다.
+        # 참조/RPC 연결 (Spec, ModuleRef)의 경우에는 빌드 시점에 에러가 발생함. (line352)
+        # 기존 모듈과의 하위 호환성을 위해 유지됩니다. (실행 시점에 연결 실패 확인됨)
         self._connect_rpc_methods(module_coordinator)
+
+        # [Modern] 모듈 참조/스펙 연결 (권장 방식)
+        # RPC 방식은 "A라는 함수를 연결해줘", "B라는 함수를 연결해줘"라고 일일이 요청해야 했습니다. 하지만 module_refs 방식은 **"이 역할을 수행하는 모듈 통째로 나한테 줘!"**라고 요청합니다
+        # 모듈에 들어가는 메서드를 모두 사용 할 수 있도록 프록시 객체를 만드는 작업
+        # AGENTS.md에 따라 새로운 코드에서는 이 방식을 우선적으로 사용해야 합니다.
+        # 타입 안정성을 보장하며, 빌드 단계에서 연결 오류를 즉시 감지할 수 있습니다.
         self._connect_module_refs(module_coordinator)
 
         module_coordinator.start_all_modules()

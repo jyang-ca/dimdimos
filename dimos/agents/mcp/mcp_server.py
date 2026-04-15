@@ -257,17 +257,23 @@ class McpServer(Module):
 
         from dimos.core.transport import pLCMTransport
 
+        # dimos에서 사용하는 통신 규격. 데이터를 파이썬 객체 그대로 주고받을 수 있게 해줌. 
+        # /human_input 채널로 메시지 전송
         transport: pLCMTransport[str] = pLCMTransport("/human_input")
         try:
+            # 통신 채널을 활성화합니다.
             transport.start()
+            # 실제 문자열 데이터를 채널에 실어서 보냅니다. 이 순간, 같은 채널을 듣고 있던 에이전트 모듈에게 메시지가 전달됨.
             transport.publish(message)
             return f"Message sent to agent: {message[:100]}"
         finally:
+            # 통신 채널을 비활성화합니다.
             transport.stop()
 
     def _start_server(self, port: int | None = None) -> None:
         from dimos.core.global_config import global_config
 
+        # 지정된 포트로 FastAPI 서버(uvicorn)를 엽니다. (mcp_adapter -> mcp_server)
         _port = port if port is not None else global_config.mcp_port
         _host = global_config.mcp_host
         config = uvicorn.Config(app, host=_host, port=_port, log_level="info")

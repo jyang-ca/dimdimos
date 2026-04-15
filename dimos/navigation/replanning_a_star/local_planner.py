@@ -106,6 +106,7 @@ class LocalPlanner(Resource):
 
         self._stop_planning_event = Event()
 
+        # 경로를 받아와서 로컬 플래너의 상태를 초기화하고 스레드를 시작.
         with self._lock:
             self._path = path
             self._path_clearance = PathClearance(self._global_config, self._path)
@@ -174,13 +175,20 @@ class LocalPlanner(Resource):
             initial_yaw_error = angle_diff(first_yaw, robot_yaw)
             self._controller.reset_yaw_error(initial_yaw_error)
             angle_in_tolerance = abs(initial_yaw_error) < self._orientation_tolerance
+            
+            # 가고자 하는 경로의 첫 번째 점의 각도(first_yaw)와 로봇의 현재 각도(robot_yaw)를 비교합니다.
+            # 각도 오차가 작으면(angle_in_tolerance): 이미 몸이 경로 방향으로 잘 정렬되어 있다는 뜻입니다. 제자리 회전 단계를 건너뛸 수 있습니다.
             if angle_in_tolerance:
                 position_in_tolerance = (
                     path.poses[0].position.distance(current_odom.position) < 0.01
                 )
                 if position_in_tolerance:
+                    # 정해진 경로의 첫 번째 점과 현재 로봇 위치가 1cm(0.01) 이내로 매우 가깝다면?
+                    # 결과: 곧바로 "최종 회전(final_rotation)" 상태로 넘어가서 마지막에 바라봐야 할 각도만 맞추고 종료 준비를 합니다. (이동할 필요가 거의 없을 때 수행됩니다.)
                     new_state = "final_rotation"
                 else:
+                    # 각도는 맞지만 아직 가야 할 길이 남았습니다.
+                    # 결과: "경로 추종(path_following)" 상태로 설정하여 실제로 전진을 시작합니다.
                     new_state = "path_following"
 
         with self._lock:
@@ -190,11 +198,14 @@ class LocalPlanner(Resource):
             start_time = time.perf_counter()
 
             with self._lock:
+                # update_costmap을 통해 현재 센서에 찍힌 장애물 정보를 지도에 반영합니다.
                 path_clearance.update_costmap(self._navigation_map.binary_costmap)
+                # update_pose_index를 통해 현재 로봇의 위치를 경로 상에서 업데이트합니다.
                 path_clearance.update_pose_index(self._pose_index)
 
             self._send_navigation_costmap(path, path_clearance)
 
+            # is_obstacle_ahead()가 앞에 장애물이 있다고 판단하면, 그 자리에서 바로 루프를 빠져나오고(break), "장애물 발견(obstacle_found)" 신호를 상위 플래너에게 보냅니다.
             if path_clearance.is_obstacle_ahead():
                 logger.info("Obstacle detected ahead, stopping local planner.")
                 self.stopped_navigating.on_next("obstacle_found")
@@ -204,18 +215,23 @@ class LocalPlanner(Resource):
                 state: PlannerState = self._state
 
             if state == "initial_rotation":
+                #  "출발 전이니 몸부터 돌리자." → 제자리 회전 속도 계산
                 cmd_vel = self._compute_initial_rotation()
             elif state == "path_following":
+                # "이제 길을 따라가자." → 경로 추종 속도 계산
                 cmd_vel = self._compute_path_following()
             elif state == "final_rotation":
+                # "목표 지점 근처니 마지막으로 방향만 맞추자." → 최종 회전 속도 계산
                 cmd_vel = self._compute_final_rotation()
             elif state == "arrived":
+                # arrived: "다 왔다!" → 루프 종료
                 self.stopped_navigating.on_next("arrived")
                 break
             elif state == "idle":
                 cmd_vel = None
 
             if cmd_vel is not None:
+                # 속도 신호가 global_planner.py에서 구현된 cmd_vel에 전달됨.
                 self.cmd_vel.on_next(cmd_vel)
 
             elapsed = time.perf_counter() - start_time

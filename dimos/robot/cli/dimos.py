@@ -134,7 +134,7 @@ def run(
     cli_config_overrides: dict[str, Any] = ctx.obj
     global_config.update(**cli_config_overrides)
 
-    # Clean stale registry entries
+    # Clean stale registry entries. 비정상적으로 종료된 이전 실행 기록을 정리
     stale = cleanup_stale()
     if stale:
         logger.info(f"Cleaned {stale} stale run entries")
@@ -156,15 +156,20 @@ def run(
     # Route structured logs (main.jsonl) to the per-run directory.
     # Workers inherit DIMOS_RUN_LOG_DIR env var via forkserver.
     set_run_log_dir(log_dir)
-
+    
+    # get_by_name(robot_types)의 결과로 나온 객체들을 autoconnect의 인자로 풀어서 전달
     blueprint = autoconnect(*map(get_by_name, robot_types))
 
+    # disable 옵션을 사용했을 경우에만 실행됨. 일부 모듈을 끄고 사용하고 싶을 때 사용
     if disable:
+        # disable 옵션으로 지정된 모듈의 파이썬 클래스를 찾음.
         disabled_classes = tuple(get_module_by_name(name).blueprints[0].module for name in disable)
+        # 해당 모듈들을 비활성화함.
         blueprint = blueprint.disabled_modules(*disabled_classes)
 
     coordinator = blueprint.build(cli_config_overrides=cli_config_overrides)
 
+    # 백그라운드 실행 모드 (사용자가 dimos run --daemon이라고 명령했을 때 실행됨)
     if daemon:
         from dimos.core.daemon import (
             daemonize,
@@ -187,8 +192,10 @@ def run(
         typer.echo("  Stop:      dimos stop")
         typer.echo("  Status:    dimos status")
 
+        # 터미널에 메세지를 출력하지 않도록 함
         coordinator.suppress_console()
 
+        # 데몬 프로세스 생성
         daemonize(log_dir)
 
         entry = RunEntry(
@@ -201,10 +208,14 @@ def run(
             config_overrides=cli_config_overrides,
             original_argv=sys.argv,
         )
+        # 실행 기록 저장
+        # 이 기록 덕분에 나중에 사용자가 dimos status를 쳤을 때 정보를 보여주거나, dimos stop을 쳤을 때 누구를 죽여야 할지 알 수 있게 됩니다.
         entry.save()
+        # 백그라운드 상태에서도 정지 신호가 오면 안전하게 종료되도록 설정합니다.
         install_signal_handlers(entry, coordinator)
         coordinator.loop()
     else:
+        # 포그라운드 실행 모드 (일반적으로 dimos run만 했을 때 실행됩니다. 터미널 화면에 로그가 실시간으로 보이며, Ctrl + C를 누르면 종료됩니다.)
         entry = RunEntry(
             run_id=run_id,
             pid=os.getpid(),

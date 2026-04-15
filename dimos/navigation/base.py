@@ -18,7 +18,8 @@ from enum import Enum
 
 from dimos.msgs.geometry_msgs import PoseStamped
 
-
+# ABC(Abstract Base Class)를 상속받아 '인터페이스'임을 명시
+# 각 메서드별로 규칙만 정의해둠. 실제 구현은 다른 모듈에서 함.
 class NavigationState(Enum):
     IDLE = "idle"
     FOLLOWING_PATH = "following_path"

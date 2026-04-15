@@ -71,6 +71,7 @@ class ReplanningAStarPlanner(Module, NavigationInterface):
 
         self._disposables.add(self._planner.path.subscribe(self.path.publish))
 
+        # 아래 신호가 수신되면, go2/connect.py에 있는 self.cmd_vel.subscribe(self.move))를 호출함. (go2의 경우)
         self._disposables.add(self._planner.cmd_vel.subscribe(self.cmd_vel.publish))
 
         self._disposables.add(self._planner.goal_reached.subscribe(self.goal_reached.publish))
@@ -91,6 +92,7 @@ class ReplanningAStarPlanner(Module, NavigationInterface):
 
     @rpc
     def set_goal(self, goal: PoseStamped) -> bool:
+        # 목표 수신 후 planner에게 전달
         self._planner.handle_goal_request(goal)
         return True
 

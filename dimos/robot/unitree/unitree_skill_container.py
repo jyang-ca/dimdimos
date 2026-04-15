@@ -229,12 +229,14 @@ class UnitreeSkillContainer(Module):
             relative_move(forward=0, left=3, degrees=90)
         """
         forward, left, degrees = float(forward), float(left), float(degrees)
-
+        
+        # 로봇의 현재 위치(월드 좌표계 기준)를 가져옵니다.
         tf = self.tf.get("world", "base_link")
         if tf is None:
             return "Failed to get the position of the robot."
 
         try:
+            # RPC를 통해 호출 할 수 있는 proxy 함수 선언
             set_goal_rpc, get_state_rpc, is_goal_reached_rpc = self.get_rpc_calls(
                 "NavigationInterface.set_goal",
                 "NavigationInterface.get_state",
@@ -247,6 +249,10 @@ class UnitreeSkillContainer(Module):
         # TODO: Improve this. This is not a nice way to do it. I should
         # subscribe to arrival/cancellation events instead.
 
+        # 목표 위치 계산 (_generate_new_goal)
+        # 이동 명령 하달 (set_goal_rpc)
+        # ReplanningAStarPlanner에게 목표 지점 전달 (unitree_go2.py의 경우)
+        # replanning_a_star_planner.set_goal() -> global_planner.handle_goal_request()
         set_goal_rpc(self._generate_new_goal(tf.to_pose(), forward, left, degrees))
 
         time.sleep(1.0)
@@ -296,12 +302,14 @@ class UnitreeSkillContainer(Module):
 
     @skill
     def execute_sport_command(self, command_name: str) -> str:
+        # Go2 로봇 고유의 동작들(백플립, 인사, 앞발 들기 등)을 실행합니다.
         try:
             publish_request = self.get_rpc_calls("GO2Connection.publish_request")
         except Exception:
             logger.error("GO2Connection not connected properly")
             return "Failed to connect to GO2Connection."
 
+        # 입력값 검증: 사용자가 입력한 동작 이름이 사전에 정의된 동작인지 확인합니다.
         if command_name not in _UNITREE_COMMANDS:
             suggestions = difflib.get_close_matches(
                 command_name, _UNITREE_COMMANDS.keys(), n=3, cutoff=0.6
@@ -311,6 +319,7 @@ class UnitreeSkillContainer(Module):
         id_, _ = _UNITREE_COMMANDS[command_name]
 
         try:
+            # 찾은 ID를 GO2Connection.publish_request 함수에 실어 보냅니다.
             publish_request(RTC_TOPIC["SPORT_MOD"], {"api_id": id_})
             return f"'{command_name}' command executed successfully."
         except Exception as e:
