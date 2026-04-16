@@ -81,11 +81,12 @@ class Agent(Module[AgentConfig]):
     def start(self) -> None:
         super().start()
 
-        # human_input 채널을 구독하여 메시지를 받으면 HumanMessage 큐에 넣습니다. (mcp_server.py -> agnet.py)
+        # human_input 채널을 구독하여 메시지를 받으면 큐에 넣습니다. (mcp_server.py -> agnet.py)
         def _on_human_input(string: str) -> None:
             self._message_queue.put(HumanMessage(content=string))
 
         # 사용자의 입력을 실시간으로 모니터링하기 시작하되, 나중에 로봇 시스템(모듈)이 꺼질 때 잊지 말고 관련 리소스를 깔끔하게 정리해라
+        # human_input을 수신 할 때 마다 _on_human_input를 호출
         self._disposables.add(Disposable(self.human_input.subscribe(_on_human_input)))
 
     @rpc
@@ -97,7 +98,8 @@ class Agent(Module[AgentConfig]):
 
     @rpc
     def on_system_modules(self, modules: list[RPCClient]) -> None:
-        # module_coordinator.py에 있는 def start_all_modules에서 위 함수 호출
+        # blueprint에 있는 모든 모듈이 start된 이후에 실행됨.
+        # 정확한 실행 위치는 module_coordinator.py에 있는 def start_all_modules 참고
         assert self.rpc is not None
 
         if self.config.model.startswith("ollama:"):
@@ -206,6 +208,9 @@ def _skill_to_tool(agent: Agent, skill: SkillInfo, rpc: RPCSpec) -> StructuredTo
 
         if hasattr(result, "agent_encode"):
             uuid_ = str(uuid.uuid4())
+            # 스킬이 반환한 결과(주로 이미지)를 대화 기록에 추가합니다. -> 
+            # agent.add_message를 호출하여 _message_queue에 추가합니다 -> 
+            # _thread_loop에 의해 다시 _process_message를 호출하게 됩니다.
             _append_image_to_history(agent, skill, uuid_, result)
             return f"Tool call started with UUID: {uuid_}"
 
@@ -219,6 +224,7 @@ def _skill_to_tool(agent: Agent, skill: SkillInfo, rpc: RPCSpec) -> StructuredTo
 
 
 def _append_image_to_history(agent: Agent, skill: SkillInfo, uuid_: str, result: Any) -> None:
+    # 스킬이 반환한 결과(주로 이미지)를 대화 기록에 추가합니다.
     agent.add_message(
         HumanMessage(
             content=[

@@ -67,6 +67,7 @@ class NavigationSkillContainer(Module):
     @rpc
     def start(self) -> None:
         super().start()
+        # start() 메서드에서 color_image와 odom 스트림을 구독하고, 데이터가 들어올 때마다 콜백 함수(_on_color_image, _on_odom)를 통해 캐시를 갱신
         self._disposables.add(Disposable(self.color_image.subscribe(self._on_color_image)))
         self._disposables.add(Disposable(self.odom.subscribe(self._on_odom)))
         self._skill_started = True

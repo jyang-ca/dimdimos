@@ -135,6 +135,7 @@ def run(
     global_config.update(**cli_config_overrides)
 
     # Clean stale registry entries. 비정상적으로 종료된 이전 실행 기록을 정리
+    # CLI entry: run()
     stale = cleanup_stale()
     if stale:
         logger.info(f"Cleaned {stale} stale run entries")
@@ -158,6 +159,7 @@ def run(
     set_run_log_dir(log_dir)
     
     # get_by_name(robot_types)의 결과로 나온 객체들을 autoconnect의 인자로 풀어서 전달
+    # Blueprint registry lookup
     blueprint = autoconnect(*map(get_by_name, robot_types))
 
     # disable 옵션을 사용했을 경우에만 실행됨. 일부 모듈을 끄고 사용하고 싶을 때 사용

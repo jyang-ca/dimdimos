@@ -225,6 +225,7 @@ class UnitreeWebRTCConnection(Resource):
             # Use call_soon_threadsafe to run in the background thread
             self.loop.call_soon_threadsafe(run_unsubscription)
 
+        # callback_to_observable: start, stop을 인자로 받아서 Observable을 반환하는 함수
         return callback_to_observable(
             start=subscribe_in_thread,
             stop=unsubscribe_in_thread,
@@ -239,14 +240,17 @@ class UnitreeWebRTCConnection(Resource):
 
     @simple_mcache
     def raw_lidar_stream(self) -> Observable[RawLidarMsg]:
+        # L1. ULIDAR_ARRAY 토픽을 구독합니다.
         return backpressure(self.unitree_sub_stream(RTC_TOPIC["ULIDAR_ARRAY"]))
 
     @simple_mcache
     def raw_odom_stream(self) -> Observable[Pose]:
+        # O1. ROBOTODOM 토픽을 구독합니다.
         return backpressure(self.unitree_sub_stream(RTC_TOPIC["ROBOTODOM"]))
 
     @simple_mcache
     def lidar_stream(self) -> Observable[PointCloud2]:
+        # L2. pointcloud2_from_webrtc_lidar 함수를 사용하여 PointCloud2 메시지로 변환합니다.
         return backpressure(self.raw_lidar_stream().pipe(ops.map(pointcloud2_from_webrtc_lidar)))
 
     @simple_mcache
@@ -256,10 +260,12 @@ class UnitreeWebRTCConnection(Resource):
 
     @simple_mcache
     def odom_stream(self) -> Observable[Pose]:
+        # O2. Odometry.from_msg 함수를 사용하여 Odometry 메시지로 변환합니다.
         return backpressure(self.raw_odom_stream().pipe(ops.map(Odometry.from_msg)))
 
     @simple_mcache
     def video_stream(self) -> Observable[Image]:
+        # V2. 수신된 프레임을 Image.from_numpy를 통해 DimOS Image 메시지로 변환합니다
         return backpressure(
             self.raw_video_stream().pipe(
                 ops.filter(lambda frame: frame is not None),
@@ -317,6 +323,7 @@ class UnitreeWebRTCConnection(Resource):
 
     @simple_mcache
     def raw_video_stream(self) -> Observable[VideoMessage]:
+        # V1. WebRTC 비디오 프레임을 수신하여 Subject로 발행합니다.
         subject: Subject[VideoMessage] = Subject()
         stop_event = threading.Event()
 
