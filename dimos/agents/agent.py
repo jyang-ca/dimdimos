@@ -26,7 +26,7 @@ from langgraph.graph.state import CompiledStateGraph
 from reactivex.disposable import Disposable
 
 from dimos.agents.system_prompt import SYSTEM_PROMPT
-from dimos.agents.utils import pretty_print_langchain_message
+from dimos.agents.utils import create_chat_model, pretty_print_langchain_message
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig, SkillInfo
 from dimos.core.rpc_client import RpcCall, RPCClient
@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 @dataclass
 class AgentConfig(ModuleConfig):
     system_prompt: str | None = SYSTEM_PROMPT
-    model: str = "gpt-4o"
+    model: str = "gpt-5.4"
     model_fixture: str | None = None
 
 """
@@ -107,11 +107,12 @@ class Agent(Module[AgentConfig]):
 
             ensure_ollama_model(self.config.model.removeprefix("ollama:"))
 
-        model: str | BaseChatModel = self.config.model
         if self.config.model_fixture is not None:
             from dimos.agents.testing import MockModel
 
             model = MockModel(json_path=self.config.model_fixture)
+        else:
+            model = create_chat_model(self.config.model)
 
         with self._lock:
             # Here to prevent unwanted imports in the file.

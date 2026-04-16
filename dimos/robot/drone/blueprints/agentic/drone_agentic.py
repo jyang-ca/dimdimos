@@ -44,7 +44,7 @@ drone_agentic = autoconnect(
     DroneTrackingModule.blueprint(outdoor=False),
     GoogleMapsSkillContainer.blueprint(),
     OsmSkill.blueprint(),
-    agent(system_prompt=DRONE_SYSTEM_PROMPT, model="gpt-4o"),
+    agent(system_prompt=DRONE_SYSTEM_PROMPT, model="gpt-5.4"),
     web_input(),
 ).remappings(
     [

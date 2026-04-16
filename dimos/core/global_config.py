@@ -51,6 +51,7 @@ class GlobalConfig(BaseSettings):
     planner_robot_speed: float | None = None
     mcp_port: int = 9990
     mcp_host: str = "0.0.0.0"
+    openai_base_url: str = "http://127.0.0.1:10531/v1"
     dtop: bool = False
     obstacle_avoidance: bool = True
     detection_model: VlModelName = "moondream"

@@ -15,8 +15,11 @@
 from datetime import datetime
 from typing import Any
 
+from langchain.chat_models import init_chat_model
 from langchain_core.messages.base import BaseMessage
+from langchain_openai import ChatOpenAI
 
+from dimos.core.global_config import global_config
 from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger()
@@ -109,3 +112,17 @@ def _try_to_remove_url_data(content: Any) -> Any:
             ret.append(item)
 
     return ret
+
+
+def create_chat_model(model: str) -> Any:
+    """Create the configured chat model for agents."""
+    if model.startswith("openai:"):
+        return ChatOpenAI(
+            model=model.removeprefix("openai:"),
+            base_url=global_config.openai_base_url,
+        )
+
+    if ":" in model and not model.startswith("gpt-"):
+        return init_chat_model(model)
+
+    return ChatOpenAI(model=model, base_url=global_config.openai_base_url)

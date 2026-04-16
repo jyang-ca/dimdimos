@@ -15,10 +15,10 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from langchain.chat_models import init_chat_model
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from dimos.agents.system_prompt import SYSTEM_PROMPT
+from dimos.agents.utils import create_chat_model
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
@@ -33,7 +33,7 @@ logger = setup_logger()
 
 @dataclass
 class VLMAgentConfig(ModuleConfig):
-    model: str = "gpt-4o"
+    model: str = "gpt-5.4"
     system_prompt: str | None = SYSTEM_PROMPT
 
 
@@ -55,7 +55,7 @@ class VLMAgent(Module):
 
             ensure_ollama_model(self.config.model.removeprefix("ollama:"))
 
-        self._llm: BaseChatModel = init_chat_model(self.config.model)  # type: ignore[assignment]
+        self._llm: BaseChatModel = create_chat_model(self.config.model)  # type: ignore[assignment]
         self._latest_image: Image | None = None
         self._history: list[AIMessage | HumanMessage] = []
         self._system_message = SystemMessage(self.config.system_prompt or SYSTEM_PROMPT)

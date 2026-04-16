@@ -31,6 +31,8 @@ from langchain_core.messages import (
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable
 
+from dimos.agents.utils import create_chat_model
+
 
 class MockModel(SimpleChatModel):
     """Custom fake chat model that supports tool calls for testing.
@@ -53,7 +55,7 @@ class MockModel(SimpleChatModel):
         responses = kwargs.pop("responses", [])
         json_path = kwargs.pop("json_path", None)
         model_provider = kwargs.pop("model_provider", "openai")
-        model_name = kwargs.pop("model_name", "gpt-4o")
+        model_name = kwargs.pop("model_name", "gpt-5.4")
 
         super().__init__(**kwargs)
 
@@ -64,7 +66,11 @@ class MockModel(SimpleChatModel):
         self.recorded_messages = []
 
         if self.record:
-            self.real_model = init_chat_model(model_provider=model_provider, model=model_name)
+            self.real_model = (
+                create_chat_model(model_name)
+                if model_provider == "openai"
+                else init_chat_model(model_provider=model_provider, model=model_name)
+            )
             self.responses = []
         elif self.json_path:
             self.responses = self._load_responses_from_json()  # type: ignore[assignment]
