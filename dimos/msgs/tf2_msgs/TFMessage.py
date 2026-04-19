@@ -124,7 +124,12 @@ class TFMessage:
         return "\n".join(lines)
 
     def to_rerun(self) -> RerunMulti:
-        """Convert to a list of rerun Transform3D archetypes.
+        """Legacy fallback conversion for direct TFMessage logging.
+
+        RerunBridgeModule handles TFMessage directly and should not rely on this
+        method. A TFMessage often contains only a subset of the full TF tree, so
+        this stateless conversion cannot reconstruct entity paths like
+        `world/base_link/camera_link`.
 
         Returns a list of tuples (entity_path, Transform3D) for each transform
         in the message. The entity_path is derived from the child_frame_id and

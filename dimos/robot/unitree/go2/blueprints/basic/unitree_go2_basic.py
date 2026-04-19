@@ -40,12 +40,29 @@ _transports_base = (
     autoconnect() if platform.system() == "Linux" else autoconnect().transports(_mac_transports)
 )
 
+_CAMERA_OPTICAL_ENTITY = "world/base_link/camera_link/camera_optical"
+_CAMERA_IMAGE_ENTITY = f"{_CAMERA_OPTICAL_ENTITY}/color_image"
+
+
+def _convert_color_image(image: Any) -> list[tuple[str, Any]]:
+    return [(_CAMERA_IMAGE_ENTITY, image.to_rerun())]
+
 
 def _convert_camera_info(camera_info: Any) -> Any:
     return camera_info.to_rerun(
-        image_topic="/world/color_image",
-        optical_frame="camera_optical",
+        image_topic=_CAMERA_IMAGE_ENTITY,
     )
+
+
+def _convert_odom(odom: Any) -> list[tuple[str, Any]]:
+    return [
+        ("world/odom", odom.to_rerun()),
+        ("world/base_link", odom.to_rerun()),
+    ]
+
+
+def _convert_path(path: Any) -> Any:
+    return path.to_rerun(color=(255, 215, 0), z_offset=0.75, radii=0.08)
 
 
 def _convert_global_map(grid: Any) -> Any:
@@ -66,9 +83,8 @@ def _static_base_link(rr: Any) -> list[Any]:
         rr.Boxes3D(
             half_sizes=[0.35, 0.155, 0.2],
             colors=[(0, 255, 127)],
-            fill_mode="wireframe",
+            fill_mode=rr.components.FillMode.MajorWireframe,
         ),
-        rr.Transform3D(parent_frame="tf#/base_link"),
     ]
 
 
@@ -78,15 +94,27 @@ def _go2_rerun_blueprint() -> Any:
 
     return rrb.Blueprint(
         rrb.Horizontal(
-            rrb.Spatial2DView(origin="world/color_image", name="Camera"),
+            rrb.Spatial2DView(origin=_CAMERA_IMAGE_ENTITY, name="Camera"),
             rrb.Spatial3DView(origin="world", name="3D"),
             column_shares=[1, 2],
         ),
+        rrb.TimePanel(timeline="dimos_time", play_state="following"),
     )
 
 
 rerun_config = {
     "blueprint": _go2_rerun_blueprint,
+    # Rerun-only throttle. This reduces web viewer payload without changing
+    # robot control, mapping, navigation, or any upstream pubsub rates.
+    "min_interval_by_entity": {
+        "world/color_image": 0.5,  # 2 Hz; remapped to the camera TF entity below.
+        "world/lidar": 1.0,  # 1 Hz
+        "world/odom": 0.5,  # 2 Hz; MuJoCo odom is 50 Hz.
+        "world/global_map": 5.0,  # 0.2 Hz; cumulative point cloud grows over time.
+        "world/global_costmap": 1.0,  # 1 Hz
+        "world/navigation_costmap": 1.0,  # 1 Hz
+        "world/tf": 0.5,  # 2 Hz
+    },
     # any pubsub that supports subscribe_all and topic that supports str(topic)
     # is acceptable here
     "pubsubs": [LCM()],
@@ -96,13 +124,18 @@ rerun_config = {
     #
     # This is unsustainable once we move to multi robot etc
     "visual_override": {
+        "world/color_image": _convert_color_image,
         "world/camera_info": _convert_camera_info,
+        "world/odom": _convert_odom,
+        "world/path": _convert_path,
         "world/global_map": _convert_global_map,
         "world/navigation_costmap": _convert_navigation_costmap,
     },
-    # slapping a go2 shaped box on top of tf/base_link
+    # Slap a go2 shaped box under the dynamic base_link entity produced by the
+    # Rerun bridge TF tree. Keep geometry on a child path so static geometry
+    # never overwrites the dynamic base_link transform.
     "static": {
-        "world/tf/base_link": _static_base_link,
+        "world/base_link/body": _static_base_link,
     },
 }
 

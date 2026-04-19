@@ -114,8 +114,7 @@ class MujocoConnection:
 
     camera_info_static: CameraInfo = _compute_camera_info()
 
-    @staticmethod
-    def _mujoco_subprocess_env() -> dict[str, str]:
+    def _mujoco_subprocess_env(self) -> dict[str, str]:
         """Build the environment for the MuJoCo subprocess.
 
         SSH X11 sessions may rely on DISPLAY/XAUTHORITY values that need to be
@@ -128,6 +127,12 @@ class MujocoConnection:
             default_xauthority = os.path.expanduser("~/.Xauthority")
             if os.path.exists(default_xauthority):
                 env["XAUTHORITY"] = default_xauthority
+
+        if not self.global_config.mujoco_native_viewer and self.global_config.mujoco_gl:
+            env.setdefault("MUJOCO_GL", self.global_config.mujoco_gl)
+            if self.global_config.mujoco_gl == "egl":
+                env.setdefault("PYOPENGL_PLATFORM", "egl")
+                env.setdefault("MESA_SHADER_CACHE_DIR", "/tmp/dimos_mesa_shader_cache")
 
         return env
 
@@ -147,6 +152,9 @@ class MujocoConnection:
                 "Launching MuJoCo subprocess",
                 display=env.get("DISPLAY"),
                 xauthority=env.get("XAUTHORITY"),
+                mujoco_gl=env.get("MUJOCO_GL"),
+                pyopengl_platform=env.get("PYOPENGL_PLATFORM"),
+                native_viewer=self.global_config.mujoco_native_viewer,
             )
 
             self.process = subprocess.Popen(
