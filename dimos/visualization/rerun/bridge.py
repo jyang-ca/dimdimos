@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import lru_cache
+from urllib.parse import quote
 import time
 from typing import (
     TYPE_CHECKING,
@@ -165,6 +166,11 @@ def _resolve_viewer_mode() -> ViewerMode:
     from dimos.core.global_config import global_config
 
     return _BACKEND_TO_MODE.get(global_config.viewer, "native")
+
+
+def _web_viewer_url(grpc_port: int = RERUN_GRPC_PORT, web_port: int = RERUN_WEB_PORT) -> str:
+    proxy_url = quote(f"rerun+http://localhost:{grpc_port}/proxy", safe="")
+    return f"http://localhost:{web_port}/?url={proxy_url}"
 
 
 @dataclass
@@ -317,8 +323,29 @@ class RerunBridgeModule(Module):
                 )
             rr.spawn(connect=True, memory_limit=self.config.memory_limit)
         elif self.config.viewer_mode == "web":
-            server_uri = rr.serve_grpc()
-            rr.serve_web_viewer(connect_to=server_uri, open_browser=False)
+            try:
+                server_uri = rr.serve_grpc(grpc_port=RERUN_GRPC_PORT)
+            except OSError as exc:
+                logger.warning(
+                    "Rerun gRPC port already in use, assuming an existing viewer is running",
+                    port=RERUN_GRPC_PORT,
+                    exc_info=exc,
+                )
+                server_uri = f"rerun+http://127.0.0.1:{RERUN_GRPC_PORT}/proxy"
+
+            try:
+                rr.serve_web_viewer(
+                    web_port=RERUN_WEB_PORT,
+                    connect_to=server_uri,
+                    open_browser=False,
+                )
+            except OSError as exc:
+                logger.warning(
+                    "Rerun web viewer port already in use; reuse the existing web UI",
+                    port=RERUN_WEB_PORT,
+                    url=_web_viewer_url(),
+                    exc_info=exc,
+                )
         elif self.config.viewer_mode == "connect":
             rr.connect_grpc(self.config.connect_url)
         # "none" - just init, no viewer (connect externally)

@@ -20,6 +20,7 @@ import base64
 from collections.abc import Callable
 import functools
 import json
+import os
 import pickle
 import subprocess
 import sys
@@ -113,6 +114,23 @@ class MujocoConnection:
 
     camera_info_static: CameraInfo = _compute_camera_info()
 
+    @staticmethod
+    def _mujoco_subprocess_env() -> dict[str, str]:
+        """Build the environment for the MuJoCo subprocess.
+
+        SSH X11 sessions may rely on DISPLAY/XAUTHORITY values that need to be
+        preserved explicitly when the simulator is launched from a worker
+        process.
+        """
+        env = dict(os.environ)
+
+        if env.get("DISPLAY") and not env.get("XAUTHORITY"):
+            default_xauthority = os.path.expanduser("~/.Xauthority")
+            if os.path.exists(default_xauthority):
+                env["XAUTHORITY"] = default_xauthority
+
+        return env
+
     def start(self) -> None:
         self.shm_data = ShmWriter()
 
@@ -123,9 +141,17 @@ class MujocoConnection:
         try:
             # mjpython must be used macOS (because of launch_passive inside mujoco_process.py)
             executable = sys.executable if sys.platform != "darwin" else "mjpython"
+            env = self._mujoco_subprocess_env()
+
+            logger.info(
+                "Launching MuJoCo subprocess",
+                display=env.get("DISPLAY"),
+                xauthority=env.get("XAUTHORITY"),
+            )
 
             self.process = subprocess.Popen(
                 [executable, str(LAUNCHER_PATH), config_pickle, shm_names_json],
+                env=env,
             )
 
         except Exception as e:

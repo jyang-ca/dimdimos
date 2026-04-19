@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
+import os
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -26,6 +26,28 @@ from dimos.simulation.mujoco.input_controller import InputController
 from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger()
+
+
+def _preferred_onnx_providers() -> list[str]:
+    """Pick stable execution providers for local simulation.
+
+    Some environments advertise TensorRT through onnxruntime-gpu even when the
+    TensorRT shared libraries are not installed. Opt in via env var instead of
+    trying it by default on every launch.
+    """
+    available = ort.get_available_providers()
+    providers: list[str] = []
+
+    if os.environ.get("DIMOS_ENABLE_TENSORRT", "").lower() in {"1", "true", "yes"}:
+        if "TensorrtExecutionProvider" in available:
+            providers.append("TensorrtExecutionProvider")
+
+    if "CUDAExecutionProvider" in available:
+        providers.append("CUDAExecutionProvider")
+    if "CPUExecutionProvider" in available:
+        providers.append("CPUExecutionProvider")
+
+    return providers or available
 
 
 class OnnxController(ABC):
@@ -40,7 +62,7 @@ class OnnxController(ABC):
         drift_compensation: list[float] | None = None,
     ) -> None:
         self._output_names = ["continuous_actions"]
-        self._policy = ort.InferenceSession(policy_path, providers=ort.get_available_providers())
+        self._policy = ort.InferenceSession(policy_path, providers=_preferred_onnx_providers())
         logger.info(f"Loaded policy: {policy_path} with providers: {self._policy.get_providers()}")
 
         self._action_scale = action_scale
