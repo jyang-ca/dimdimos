@@ -28,6 +28,8 @@ pushing an update that breaks the spawn interface or version compatibility.
 import inspect
 import re
 import shutil
+import threading
+from types import SimpleNamespace
 
 
 class TestViewerBinaryInstallation:
@@ -118,6 +120,37 @@ class TestBridgeSpawnLogic:
             "bridge.py start() has no fallback for missing dimos-viewer. "
             "Users without dimos-viewer will crash."
         )
+
+
+class TestBridgeFlushLogic:
+    """Verify live Rerun streams are flushed outside pubsub callbacks."""
+
+    def test_dirty_recording_flushes_in_background(self):
+        from dimos.visualization.rerun.bridge import RerunBridgeModule
+
+        class FakeRecording:
+            def __init__(self):
+                self.flushed = threading.Event()
+                self.timeout_sec = None
+
+            def flush(self, *, timeout_sec):
+                self.timeout_sec = timeout_sec
+                self.flushed.set()
+
+        fake_recording = FakeRecording()
+        bridge = object.__new__(RerunBridgeModule)
+        bridge.config = SimpleNamespace(flush_interval_sec=0.01, flush_timeout_sec=0.2)
+        bridge._rr_recording = fake_recording
+        bridge._last_rerun_flush_error = 0.0
+
+        bridge._start_rerun_flush_thread()
+        try:
+            bridge._mark_rerun_dirty()
+
+            assert fake_recording.flushed.wait(timeout=1.0)
+            assert fake_recording.timeout_sec == 0.2
+        finally:
+            bridge._stop_rerun_flush_thread()
 
 
 def _parse_version(version_str: str) -> tuple[int, int]:

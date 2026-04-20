@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import lru_cache
+import threading
 import time
 from typing import (
     TYPE_CHECKING,
@@ -53,6 +54,7 @@ _HEAVY_MSG_TYPES: tuple[type, ...] = (Image, PointCloud2, OccupancyGrid)
 
 RERUN_GRPC_PORT = 9876
 RERUN_WEB_PORT = 9090
+
 
 # TODO OUT visual annotations
 #
@@ -202,6 +204,8 @@ class Config(ModuleConfig):
     # TF is produced at high rate by robot odometry. This only throttles Rerun
     # visualization and does not affect odometry, planning, or control.
     tf_min_interval_sec: float = 0.0
+    flush_interval_sec: float = 0.25
+    flush_timeout_sec: float = 1.0
     # Root TF frame that maps to entity_prefix in Rerun. Frames below this root
     # are logged as real entity paths, e.g. world/base_link/camera_link.
     tf_root_frame: str = "world"
@@ -334,13 +338,45 @@ class RerunBridgeModule(Module):
         )
         rr.set_time("dimos_seq", sequence=self._rerun_log_seq, recording=self._rr_recording)
 
-    def _flush_rerun_periodically(self) -> None:
-        """Flush Rerun batches often enough for live web visualization."""
-        now = time.monotonic()
-        if now - self._last_rerun_flush < 0.5:
+    def _mark_rerun_dirty(self) -> None:
+        self._rerun_dirty.set()
+
+    def _flush_rerun_once(self, timeout_sec: float) -> None:
+        try:
+            self._rr_recording.flush(timeout_sec=timeout_sec)
+        except Exception:
+            now = time.monotonic()
+            if now - self._last_rerun_flush_error < 10.0:
+                return
+            self._last_rerun_flush_error = now
+            logger.warning("Rerun flush did not complete", exc_info=True)
+
+    def _rerun_flush_loop(self) -> None:
+        while not self._rerun_flush_stop.wait(self.config.flush_interval_sec):
+            if not self._rerun_dirty.is_set():
+                continue
+            self._rerun_dirty.clear()
+            self._flush_rerun_once(self.config.flush_timeout_sec)
+
+    def _start_rerun_flush_thread(self) -> None:
+        self._rerun_dirty = threading.Event()
+        self._rerun_flush_stop = threading.Event()
+        self._rerun_flush_thread = threading.Thread(
+            target=self._rerun_flush_loop,
+            name="rerun-flush",
+            daemon=True,
+        )
+        self._rerun_flush_thread.start()
+
+    def _stop_rerun_flush_thread(self) -> None:
+        if not hasattr(self, "_rerun_flush_stop"):
             return
-        self._last_rerun_flush = now
-        self._rr_recording.flush(timeout_sec=0.1)
+        self._rerun_flush_stop.set()
+        if (
+            hasattr(self, "_rerun_flush_thread")
+            and threading.current_thread() is not self._rerun_flush_thread
+        ):
+            self._rerun_flush_thread.join(timeout=2.0)
 
     @staticmethod
     def _normalize_tf_frame(frame: str) -> str:
@@ -453,6 +489,7 @@ class RerunBridgeModule(Module):
 
         self._set_rerun_time_for_message(msg)
         self._log_tf_tree()
+        self._mark_rerun_dirty()
 
     def _on_message(self, msg: Any, topic: Any) -> None:
         """Handle incoming message - log to rerun."""
@@ -493,7 +530,7 @@ class RerunBridgeModule(Module):
                 rr.log(path, archetype, recording=self._rr_recording)
         else:
             rr.log(entity_path, cast("Archetype", rerun_data), recording=self._rr_recording)
-        self._flush_rerun_periodically()
+        self._mark_rerun_dirty()
 
     @rpc
     def start(self) -> None:
@@ -504,7 +541,7 @@ class RerunBridgeModule(Module):
         self._last_log: dict[str, float] = {}
         self._tf_edges: dict[str, _TfEdge] = {}
         self._rerun_log_seq = 0
-        self._last_rerun_flush = 0.0
+        self._last_rerun_flush_error = 0.0
         logger.info("Rerun bridge starting", viewer_mode=self.config.viewer_mode)
 
         # Own one explicit RecordingStream. This avoids relying on
@@ -575,6 +612,7 @@ class RerunBridgeModule(Module):
             rr.send_blueprint(self.config.blueprint(), recording=self._rr_recording)
 
         # Start pubsubs and subscribe to all messages
+        self._start_rerun_flush_thread()
         for pubsub in self.config.pubsubs:
             logger.info(f"bridge listening on {pubsub.__class__.__name__}")
             if hasattr(pubsub, "start"):
@@ -604,12 +642,13 @@ class RerunBridgeModule(Module):
                     )
             else:
                 rr.log(entity_path, data, static=True, recording=self._rr_recording)
-        self._rr_recording.flush(timeout_sec=1.0)
+        self._flush_rerun_once(self.config.flush_timeout_sec)
 
     @rpc
     def stop(self) -> None:
+        self._stop_rerun_flush_thread()
         if hasattr(self, "_rr_recording"):
-            self._rr_recording.flush(timeout_sec=1.0)
+            self._flush_rerun_once(self.config.flush_timeout_sec)
         super().stop()
 
 
