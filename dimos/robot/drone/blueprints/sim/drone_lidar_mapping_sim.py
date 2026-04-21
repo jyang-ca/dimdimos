@@ -16,20 +16,28 @@
 
 """Simulated drone LiDAR mapping blueprint."""
 
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from dimos.core.blueprints import autoconnect
 from dimos.core.global_config import global_config
-from dimos.mapping.costmapper import cost_mapper
-from dimos.mapping.health import mapping_health_monitor
-from dimos.mapping.pointclouds.occupancy import SimpleOccupancyConfig
-from dimos.mapping.voxels import voxel_mapper
-from dimos.navigation.replanning_a_star.module import replanning_a_star_planner
+from dimos.mapping.health import MappingHealthMonitor, mapping_health_monitor
+from dimos.mapping.voxels import VoxelGridMapper, voxel_mapper
+from dimos.navigation.replanning_a_star.module import (
+    ReplanningAStarPlanner,
+    replanning_a_star_planner,
+)
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
+from dimos.robot.drone.flight_costmapper import DroneFlightCostMapper, drone_flight_cost_mapper
 from dimos.robot.drone.sim_connection_module import drone_sim_connection
-from dimos.web.websocket_vis.websocket_vis_module import websocket_vis
+from dimos.web.websocket_vis.websocket_vis_module import WebsocketVisModule, websocket_vis
+
+if TYPE_CHECKING:
+    from dimos.core.module import Module
 
 _VOXEL_SIZE = 0.1
+_DRONE_GLOBAL_MAP = "drone/global_map"
+_DRONE_GLOBAL_COSTMAP = "drone/global_costmap"
+_DRONE_FLIGHT_COST_MODULE = cast("type[Module[Any]]", DroneFlightCostMapper)
 
 
 def _convert_global_map(grid: Any) -> Any:
@@ -62,13 +70,13 @@ _rerun_config = {
     "min_interval_by_entity": {
         "world/odom": 0.5,
         "world/lidar": 0.5,
-        "world/global_map": 1.0,
-        "world/global_costmap": 1.0,
+        "world/drone/global_map": 1.0,
+        "world/drone/global_costmap": 1.0,
         "world/tf": 0.5,
     },
     "visual_override": {
-        "world/global_map": _convert_global_map,
-        "world/global_costmap": _convert_global_costmap,
+        "world/drone/global_map": _convert_global_map,
+        "world/drone/global_costmap": _convert_global_costmap,
     },
 }
 
@@ -79,18 +87,34 @@ if global_config.viewer.startswith("rerun"):
 else:
     _vis = autoconnect()
 
-drone_lidar_mapping_sim = autoconnect(
-    _vis,
-    drone_sim_connection(),
-    voxel_mapper(publish_interval=1.0, voxel_size=_VOXEL_SIZE, carve_columns=False),
-    cost_mapper(
-        algo="simple",
-        config=SimpleOccupancyConfig(resolution=0.1, min_height=0.15, max_height=2.5),
-    ),
-    replanning_a_star_planner(),
-    mapping_health_monitor(),
-    websocket_vis(),
-).global_config(n_workers=7, robot_model="drone_lidar_mapping_sim", simulation=True)
+drone_lidar_mapping_sim = (
+    autoconnect(
+        _vis,
+        drone_sim_connection(),
+        voxel_mapper(publish_interval=1.0, voxel_size=_VOXEL_SIZE, carve_columns=False),
+        drone_flight_cost_mapper(
+            resolution=0.1,
+            clearance_below=0.25,
+            clearance_above=0.25,
+            high_obstacle_policy="ignore",
+        ),
+        replanning_a_star_planner(),
+        mapping_health_monitor(),
+        websocket_vis(),
+    )
+    .remappings(
+        [
+            (VoxelGridMapper, "global_map", _DRONE_GLOBAL_MAP),
+            (_DRONE_FLIGHT_COST_MODULE, "global_map", _DRONE_GLOBAL_MAP),
+            (MappingHealthMonitor, "global_map", _DRONE_GLOBAL_MAP),
+            (_DRONE_FLIGHT_COST_MODULE, "global_costmap", _DRONE_GLOBAL_COSTMAP),
+            (ReplanningAStarPlanner, "global_costmap", _DRONE_GLOBAL_COSTMAP),
+            (MappingHealthMonitor, "global_costmap", _DRONE_GLOBAL_COSTMAP),
+            (WebsocketVisModule, "global_costmap", _DRONE_GLOBAL_COSTMAP),
+        ]
+    )
+    .global_config(n_workers=7, robot_model="drone_lidar_mapping_sim", simulation=True)
+)
 
 __all__ = [
     "drone_lidar_mapping_sim",

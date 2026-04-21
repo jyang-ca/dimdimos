@@ -19,20 +19,33 @@ import pytest
 
 from dimos.core.global_config import global_config
 from dimos.hardware.sensors.lidar.fastlio2.module import FastLio2
-from dimos.mapping.costmapper import CostMapper
 from dimos.mapping.health import (
     MappingHealthMonitor,
     compute_costmap_health,
     compute_global_map_health,
 )
-from dimos.mapping.pointclouds.occupancy import SimpleOccupancyConfig
 from dimos.mapping.voxels import VoxelGridMapper
 from dimos.msgs.geometry_msgs import PoseStamped, Twist, Vector3
+from dimos.msgs.nav_msgs import CostValues, OccupancyGrid
+from dimos.msgs.sensor_msgs import PointCloud2
 from dimos.navigation.replanning_a_star.module import ReplanningAStarPlanner
 from dimos.robot.drone.blueprints.sim.drone_lidar_mapping_sim import drone_lidar_mapping_sim
 from dimos.robot.drone.connection_module import DroneConnectionModule
+from dimos.robot.drone.flight_costmapper import DroneFlightCostMapper
 from dimos.robot.drone.sim_connection_module import DroneSimConnectionModule
 from dimos.web.websocket_vis.websocket_vis_module import WebsocketVisModule
+
+
+def _pointcloud(points: list[list[float]], ts: float = 100.0) -> PointCloud2:
+    return PointCloud2.from_numpy(
+        np.asarray(points, dtype=np.float32), frame_id="world", timestamp=ts
+    )
+
+
+def _grid_value_at(grid: OccupancyGrid, x: float, y: float) -> int:
+    gx = int((x - grid.origin.position.x) / grid.resolution + 0.5)
+    gy = int((y - grid.origin.position.y) / grid.resolution + 0.5)
+    return int(grid.grid[gy, gx])
 
 
 def test_drone_lidar_mapping_sim_blueprint_uses_simulated_connection() -> None:
@@ -40,7 +53,7 @@ def test_drone_lidar_mapping_sim_blueprint_uses_simulated_connection() -> None:
 
     assert DroneSimConnectionModule in modules
     assert VoxelGridMapper in modules
-    assert CostMapper in modules
+    assert DroneFlightCostMapper in modules
     assert ReplanningAStarPlanner in modules
     assert MappingHealthMonitor in modules
     assert DroneConnectionModule not in modules
@@ -59,6 +72,98 @@ def test_drone_lidar_mapping_sim_wires_click_goals_to_sim_velocity() -> None:
     assert ("cmd_vel", Twist, "out", ReplanningAStarPlanner) in endpoints
     assert ("cmd_vel", Twist, "out", WebsocketVisModule) in endpoints
     assert ("cmd_vel", Twist, "in", DroneSimConnectionModule) in endpoints
+
+
+def test_drone_lidar_mapping_sim_namespaces_mapping_outputs() -> None:
+    assert (
+        drone_lidar_mapping_sim.remapping_map[(VoxelGridMapper, "global_map")] == "drone/global_map"
+    )
+    assert (
+        drone_lidar_mapping_sim.remapping_map[(DroneFlightCostMapper, "global_map")]
+        == "drone/global_map"
+    )
+    assert (
+        drone_lidar_mapping_sim.remapping_map[(MappingHealthMonitor, "global_map")]
+        == "drone/global_map"
+    )
+    assert (
+        drone_lidar_mapping_sim.remapping_map[(DroneFlightCostMapper, "global_costmap")]
+        == "drone/global_costmap"
+    )
+    assert (
+        drone_lidar_mapping_sim.remapping_map[(ReplanningAStarPlanner, "global_costmap")]
+        == "drone/global_costmap"
+    )
+    assert (
+        drone_lidar_mapping_sim.remapping_map[(MappingHealthMonitor, "global_costmap")]
+        == "drone/global_costmap"
+    )
+    assert (
+        drone_lidar_mapping_sim.remapping_map[(WebsocketVisModule, "global_costmap")]
+        == "drone/global_costmap"
+    )
+
+
+def test_drone_flight_costmap_marks_low_obstacles_free() -> None:
+    mapper = DroneFlightCostMapper(clearance_below=0.25, clearance_above=0.25)
+    cloud = _pointcloud([[0.0, 0.0, 0.0], [0.0, 0.0, 0.7]])
+
+    try:
+        grid = mapper._calculate_costmap(cloud, flight_z=1.2)
+    finally:
+        mapper.stop()
+
+    assert _grid_value_at(grid, 0.0, 0.0) == int(CostValues.FREE)
+
+
+def test_drone_flight_costmap_marks_current_height_band_occupied() -> None:
+    mapper = DroneFlightCostMapper(clearance_below=0.25, clearance_above=0.25)
+    cloud = _pointcloud([[0.0, 0.0, 0.0], [0.0, 0.0, 1.2]])
+
+    try:
+        grid = mapper._calculate_costmap(cloud, flight_z=1.2)
+    finally:
+        mapper.stop()
+
+    assert _grid_value_at(grid, 0.0, 0.0) == int(CostValues.OCCUPIED)
+
+
+def test_drone_flight_costmap_high_obstacle_policy_is_configurable() -> None:
+    cloud = _pointcloud([[0.0, 0.0, 0.0], [0.0, 0.0, 2.2]])
+    ignore_mapper = DroneFlightCostMapper(
+        clearance_below=0.25,
+        clearance_above=0.25,
+        high_obstacle_policy="ignore",
+    )
+    occupied_mapper = DroneFlightCostMapper(
+        clearance_below=0.25,
+        clearance_above=0.25,
+        high_obstacle_policy="occupied",
+    )
+
+    try:
+        ignore_grid = ignore_mapper._calculate_costmap(cloud, flight_z=1.2)
+        occupied_grid = occupied_mapper._calculate_costmap(cloud, flight_z=1.2)
+    finally:
+        ignore_mapper.stop()
+        occupied_mapper.stop()
+
+    assert _grid_value_at(ignore_grid, 0.0, 0.0) == int(CostValues.FREE)
+    assert _grid_value_at(occupied_grid, 0.0, 0.0) == int(CostValues.OCCUPIED)
+
+
+def test_drone_flight_costmap_changes_with_odom_height() -> None:
+    mapper = DroneFlightCostMapper(clearance_below=0.25, clearance_above=0.25)
+    cloud = _pointcloud([[0.0, 0.0, 0.0], [0.0, 0.0, 1.2]])
+
+    try:
+        low_flight_grid = mapper._calculate_costmap(cloud, flight_z=1.2)
+        high_flight_grid = mapper._calculate_costmap(cloud, flight_z=1.8)
+    finally:
+        mapper.stop()
+
+    assert _grid_value_at(low_flight_grid, 0.0, 0.0) == int(CostValues.OCCUPIED)
+    assert _grid_value_at(high_flight_grid, 0.0, 0.0) == int(CostValues.FREE)
 
 
 def test_drone_sim_uses_go2_mujoco_office_frame_defaults() -> None:
@@ -117,10 +222,7 @@ def test_drone_lidar_mapping_sim_metrics_from_reused_pipeline() -> None:
         device="CPU:0",
         carve_columns=False,
     )
-    cost_mapper = CostMapper(
-        algo="simple",
-        config=SimpleOccupancyConfig(resolution=0.1, min_height=0.15, max_height=2.5),
-    )
+    cost_mapper = DroneFlightCostMapper(resolution=0.1, clearance_below=0.25, clearance_above=0.25)
 
     try:
         frame = sim._lidar_frame(ts=100.0)
@@ -128,7 +230,7 @@ def test_drone_lidar_mapping_sim_metrics_from_reused_pipeline() -> None:
         global_map = voxel_mapper.get_global_pointcloud2()
         global_map_metrics = compute_global_map_health(global_map, now=100.2)
 
-        costmap = cost_mapper._calculate_costmap(global_map)
+        costmap = cost_mapper._calculate_costmap(global_map, flight_z=sim._position.z)
         costmap_metrics = compute_costmap_health(costmap, now=100.2)
     finally:
         sim.stop()

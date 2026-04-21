@@ -109,6 +109,7 @@ all_modules = {
     "demo-robot": "dimos.agents.skills.demo_robot",
     "detection-db-module": "dimos.perception.detection.moduleDB",
     "detection3d-module": "dimos.perception.detection.module3D",
+    "drone-flight-cost-mapper": "dimos.robot.drone.flight_costmapper",
     "drone-sim-connection": "dimos.robot.drone.sim_connection_module",
     "fastlio2-module": "dimos.hardware.sensors.lidar.fastlio2.module",
     "foxglove-bridge": "dimos.robot.foxglove_bridge",
