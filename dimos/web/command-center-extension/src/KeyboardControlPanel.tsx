@@ -113,7 +113,8 @@ export default function KeyboardControlPanel({
 
   // Start/stop keyboard control
   React.useEffect(() => {
-    keysPressed.current.clear();
+    const activeKeys = keysPressed.current;
+    activeKeys.clear();
 
     if (!isActive) {
       return undefined;
@@ -124,7 +125,7 @@ export default function KeyboardControlPanel({
 
     // Start publishing loop
     intervalRef.current = setInterval(() => {
-      const velocities = calculateVelocities(keysPressed.current);
+      const velocities = calculateVelocities(activeKeys);
 
       onSendMoveCommand(
         [velocities.linearX, velocities.linearY, 0],
@@ -141,7 +142,7 @@ export default function KeyboardControlPanel({
         intervalRef.current = null;
       }
 
-      keysPressed.current.clear();
+      activeKeys.clear();
       onStopMoveCommand();
     };
   }, [isActive, handleKeyDown, handleKeyUp, onSendMoveCommand, onStopMoveCommand]);

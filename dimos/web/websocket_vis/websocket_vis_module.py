@@ -36,6 +36,7 @@ from starlette.responses import FileResponse, RedirectResponse, Response
 from starlette.routing import Route
 import uvicorn
 
+from dimos.agents.autonomy.zones import DEFAULT_ZONE_DEFINITIONS
 from dimos.utils.data import get_data
 
 # Path to the frontend HTML templates and command-center build
@@ -62,6 +63,11 @@ logger = setup_logger()
 
 _browser_open_lock = threading.Lock()
 _browser_opened = False
+_ZONE_MARKER_COLORS = {
+    "Zone A": "#00E5FF",
+    "Zone B": "#FFB000",
+    "Zone C": "#FF4D8D",
+}
 
 
 class WebsocketVisModule(Module):
@@ -120,12 +126,13 @@ class WebsocketVisModule(Module):
         self._broadcast_thread = None
         self._uvicorn_server: uvicorn.Server | None = None
 
-        self.vis_state = {}  # type: ignore[var-annotated]
+        self.vis_state: dict[str, Any] = {}
         self.state_lock = threading.Lock()
         self.costmap_encoder = OptimizedCostmapEncoder(chunk_size=64)
 
         # Track GPS goal points for visualization
         self.gps_goal_points: list[dict[str, float]] = []
+        self.vis_state["zone_markers"] = self._zone_markers_payload()
         logger.info(
             f"WebSocket visualization module initialized on port {port}, GPS goal tracking enabled"
         )
@@ -244,7 +251,11 @@ class WebsocketVisModule(Module):
             """Serve the command center 2D visualization (built React app)."""
             index_file = get_data("command_center.html")
             if index_file.exists():
-                return FileResponse(index_file, media_type="text/html")
+                return FileResponse(
+                    index_file,
+                    media_type="text/html",
+                    headers={"Cache-Control": "no-store"},
+                )
             else:
                 return Response(
                     content="Command center not built. Run: cd dimos/web/command-center-extension && npm install && npm run build:standalone",
@@ -275,6 +286,7 @@ class WebsocketVisModule(Module):
             self.costmap_encoder.last_full_grid = None
 
             await self.sio.emit("full_state", current_state, room=sid)  # type: ignore[union-attr]
+            await self.sio.emit("zone_markers", self._zone_markers_payload(), room=sid)  # type: ignore[union-attr]
             logger.info(
                 f"Client {sid} connected, sent state with {len(self.gps_goal_points)} GPS goal points"
             )
@@ -381,6 +393,19 @@ class WebsocketVisModule(Module):
         costmap_data = self._process_costmap(msg)
         self.vis_state["costmap"] = costmap_data
         self._emit("costmap", costmap_data)
+
+    def _zone_markers_payload(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "name": zone.name,
+                "position": {
+                    "type": "vector",
+                    "c": [zone.center_x, zone.center_y, zone.center_z],
+                },
+                "color": _ZONE_MARKER_COLORS.get(zone.name, "#FFFFFF"),
+            }
+            for zone in DEFAULT_ZONE_DEFINITIONS
+        ]
 
     def _process_costmap(self, costmap: OccupancyGrid) -> dict[str, Any]:
         """Convert OccupancyGrid to visualization format."""

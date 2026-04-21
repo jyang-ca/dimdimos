@@ -7,10 +7,7 @@ interface GpsButtonProps {
   onUseCostmap: () => void;
 }
 
-export default function GpsButton({
-  onUseGps,
-  onUseCostmap,
-}: GpsButtonProps): React.ReactElement {
+export default function GpsButton({ onUseGps, onUseCostmap }: GpsButtonProps): React.ReactElement {
   const [gps, setGps] = React.useState(false);
 
   return (

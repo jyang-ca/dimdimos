@@ -1,4 +1,4 @@
-import { EncodedOptimizedGrid, OptimizedGrid } from './optimizedCostmap';
+import { EncodedOptimizedGrid, OptimizedGrid } from "./optimizedCostmap";
 
 export type EncodedVector = Encoded<"vector"> & {
   c: number[];
@@ -12,6 +12,24 @@ export class Vector {
 
   static decode(data: EncodedVector): Vector {
     return new Vector(...data.c);
+  }
+}
+
+export type EncodedZoneMarker = {
+  name: string;
+  position: EncodedVector;
+  color: string;
+};
+
+export class ZoneMarker {
+  constructor(
+    public name: string,
+    public position: Vector,
+    public color: string,
+  ) {}
+
+  static decode(data: EncodedZoneMarker): ZoneMarker {
+    return new ZoneMarker(data.name, Vector.decode(data.position), data.color);
   }
 }
 
@@ -53,26 +71,19 @@ export class Costmap {
     this.origin_theta = origin_theta;
   }
 
-  private static decoder: OptimizedGrid | null = null;
+  static #decoder: OptimizedGrid | null = null;
 
   static decode(data: EncodedCostmap): Costmap {
     // Use a singleton decoder to maintain state for delta updates
-    if (!Costmap.decoder) {
-      Costmap.decoder = new OptimizedGrid();
-    }
+    Costmap.#decoder ??= new OptimizedGrid();
 
-    const float32Data = Costmap.decoder.decode(data.grid);
+    const float32Data = Costmap.#decoder.decode(data.grid);
     const shape = data.grid.shape;
 
     // Create a Grid object from the decoded data
     const grid = new Grid(float32Data, shape);
 
-    return new Costmap(
-      grid,
-      Vector.decode(data.origin),
-      data.resolution,
-      data.origin_theta,
-    );
+    return new Costmap(grid, Vector.decode(data.origin), data.resolution, data.origin_theta);
   }
 }
 
@@ -94,6 +105,7 @@ export interface FullStateData {
   robot_pose?: EncodedVector;
   gps_location?: LatLon;
   gps_travel_goal_points?: LatLon[];
+  zone_markers?: EncodedZoneMarker[];
   path?: EncodedPath;
 }
 
@@ -115,6 +127,7 @@ export interface AppState {
   robotPose: Vector | null;
   gpsLocation: LatLon | null;
   gpsTravelGoalPoints: LatLon[] | null;
+  zoneMarkers: ZoneMarker[] | null;
   path: Path | null;
 }
 
@@ -123,5 +136,6 @@ export type AppAction =
   | { type: "SET_ROBOT_POSE"; payload: Vector }
   | { type: "SET_GPS_LOCATION"; payload: LatLon }
   | { type: "SET_GPS_TRAVEL_GOAL_POINTS"; payload: LatLon[] }
+  | { type: "SET_ZONE_MARKERS"; payload: ZoneMarker[] }
   | { type: "SET_PATH"; payload: Path }
   | { type: "SET_FULL_STATE"; payload: Partial<AppState> };

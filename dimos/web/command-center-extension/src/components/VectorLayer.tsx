@@ -5,18 +5,19 @@ import { Vector } from "../types";
 interface VectorLayerProps {
   vector: Vector;
   label: string;
+  color?: string;
   worldToPx: (x: number, y: number) => [number, number];
 }
 
-const VectorLayer = React.memo<VectorLayerProps>(({ vector, label, worldToPx }) => {
+const VectorLayer = React.memo<VectorLayerProps>(({ vector, label, color = "red", worldToPx }) => {
   const [cx, cy] = worldToPx(vector.coords[0]!, vector.coords[1]!);
   const text = `${label} (${vector.coords[0]!.toFixed(2)}, ${vector.coords[1]!.toFixed(2)})`;
 
   return (
     <>
       <g className="vector-marker" transform={`translate(${cx}, ${cy})`}>
-        <circle r={10} fill="none" stroke="red" strokeWidth={1} opacity={0.9} />
-        <circle r={6} fill="red" />
+        <circle r={10} fill="none" stroke={color} strokeWidth={1} opacity={0.9} />
+        <circle r={6} fill={color} />
       </g>
       <g>
         <rect

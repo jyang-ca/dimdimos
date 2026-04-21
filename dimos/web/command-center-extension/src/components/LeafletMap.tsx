@@ -1,6 +1,7 @@
+import L, { LatLngExpression } from "leaflet";
 import * as React from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from "react-leaflet";
-import L, { LatLngExpression } from "leaflet";
+
 import { LatLon } from "../types";
 
 // Fix for default marker icons in react-leaflet
@@ -33,15 +34,17 @@ interface LeafletMapProps {
 const LeafletMap: React.FC<LeafletMapProps> = ({ gpsLocation, gpsTravelGoalPoints, onGpsGoal }) => {
   if (!gpsLocation) {
     return (
-      <div style={{
-        width: "100%",
-        height: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: "18px",
-        color: "#666"
-      }}>
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: "18px",
+          color: "#666",
+        }}
+      >
         GPS location not received yet.
       </div>
     );
@@ -52,26 +55,19 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ gpsLocation, gpsTravelGoalPoint
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
       <style>{leafletCss}</style>
-      <MapContainer
-        center={center}
-        zoom={14}
-        style={{ width: "100%", height: "100%" }}
-      >
-        <TileLayer
-          attribution=''
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+      <MapContainer center={center} zoom={14} style={{ width: "100%", height: "100%" }}>
+        <TileLayer attribution="" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <MapClickHandler
+          onMapClick={(lat: number, lng: number) => {
+            onGpsGoal({ lat, lon: lng });
+          }}
         />
-        <MapClickHandler onMapClick={(lat: number, lng: number) => {
-          onGpsGoal({ lat, lon: lng });
-        }} />
         <Marker position={center}>
           <Popup>Current GPS Location</Popup>
         </Marker>
-        {gpsTravelGoalPoints !== null && (
-          gpsTravelGoalPoints.map(p => (
-            <Marker key={`${p.lat}_${p.lon}}`} position={[p.lat, p.lon]}></Marker>
-          ))
-        )}
+        {gpsTravelGoalPoints?.map((p) => (
+          <Marker key={`${p.lat}_${p.lon}}`} position={[p.lat, p.lon]}></Marker>
+        ))}
       </MapContainer>
     </div>
   );

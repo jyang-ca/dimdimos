@@ -1,8 +1,8 @@
-import * as d3 from "d3";
 import * as React from "react";
 
 import { AppState } from "../types";
 import VisualizerComponent from "./VisualizerComponent";
+import { buildWorldTransform, collectDisplayPoints } from "./worldTransform";
 
 interface VisualizerWrapperProps {
   data: AppState;
@@ -38,47 +38,32 @@ const VisualizerWrapper: React.FC<VisualizerWrapperProps> = ({ data, onWorldClic
       const clickX = event.clientX - svgRect.left;
       const clickY = event.clientY - svgRect.top;
 
-      const costmap = data.costmap;
-      const {
-        grid: { shape },
-        origin,
-        resolution,
-      } = costmap;
-      const rows = shape[0]!;
-      const cols = shape[1]!;
-      const width = svgRect.width;
-      const height = svgRect.height;
+      const displayPoints = collectDisplayPoints(data.robotPose, data.zoneMarkers, data.path);
+      const transform = buildWorldTransform(
+        data.costmap,
+        svgRect.width,
+        svgRect.height,
+        displayPoints,
+      );
+      if (!transform) {
+        return;
+      }
 
-      const axisMargin = { left: 60, bottom: 40 };
-      const availableWidth = width - axisMargin.left;
-      const availableHeight = height - axisMargin.bottom;
-
-      const cell = Math.min(availableWidth / cols, availableHeight / rows);
-      const gridW = cols * cell;
-      const gridH = rows * cell;
-      const offsetX = axisMargin.left + (availableWidth - gridW) / 2;
-      const offsetY = (availableHeight - gridH) / 2;
-
-      const xScale = d3
-        .scaleLinear()
-        .domain([origin.coords[0]!, origin.coords[0]! + cols * resolution])
-        .range([offsetX, offsetX + gridW]);
-      const yScale = d3
-        .scaleLinear()
-        .domain([origin.coords[1]!, origin.coords[1]! + rows * resolution])
-        .range([offsetY + gridH, offsetY]);
-
-      const worldX = xScale.invert(clickX);
-      const worldY = yScale.invert(clickY);
+      const [worldX, worldY] = transform.pxToWorld(clickX, clickY);
 
       onWorldClick(worldX, worldY);
     },
-    [data.costmap, onWorldClick],
+    [data.costmap, data.path, data.robotPose, data.zoneMarkers, onWorldClick],
   );
 
   return (
     <div ref={containerRef} style={{ width: "100%", height: "100%" }} onClick={handleClick}>
-      <VisualizerComponent costmap={data.costmap} robotPose={data.robotPose} path={data.path} />
+      <VisualizerComponent
+        costmap={data.costmap}
+        robotPose={data.robotPose}
+        zoneMarkers={data.zoneMarkers}
+        path={data.path}
+      />
     </div>
   );
 };

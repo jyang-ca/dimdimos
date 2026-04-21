@@ -5,13 +5,29 @@ import {
   Costmap,
   EncodedCostmap,
   EncodedPath,
+  EncodedZoneMarker,
   EncodedVector,
   FullStateData,
   LatLon,
   Path,
   TwistCommand,
   Vector,
+  ZoneMarker,
 } from "./types";
+
+function getSocketUrl(): string | undefined {
+  const explicitUrl = new URLSearchParams(window.location.search).get("socketUrl");
+  if (explicitUrl) {
+    return explicitUrl;
+  }
+
+  const pathname = window.location.pathname.replace(/\/$/, "");
+  if (pathname.endsWith("/command-center")) {
+    return undefined;
+  }
+
+  return "ws://localhost:7779";
+}
 
 export default class Connection {
   socket: Socket;
@@ -19,7 +35,8 @@ export default class Connection {
 
   constructor(dispatch: React.Dispatch<AppAction>) {
     this.dispatch = dispatch;
-    this.socket = io("ws://localhost:7779");
+    const socketUrl = getSocketUrl();
+    this.socket = socketUrl ? io(socketUrl) : io();
 
     this.socket.on("costmap", (data: EncodedCostmap) => {
       const costmap = Costmap.decode(data);
@@ -39,13 +56,25 @@ export default class Connection {
       this.dispatch({ type: "SET_GPS_TRAVEL_GOAL_POINTS", payload: data });
     });
 
+    this.socket.on("zone_markers", (data: EncodedZoneMarker[]) => {
+      const zoneMarkers = data.map((zoneMarker) => ZoneMarker.decode(zoneMarker));
+      this.dispatch({ type: "SET_ZONE_MARKERS", payload: zoneMarkers });
+    });
+
     this.socket.on("path", (data: EncodedPath) => {
       const path = Path.decode(data);
       this.dispatch({ type: "SET_PATH", payload: path });
     });
 
     this.socket.on("full_state", (data: FullStateData) => {
-      const state: Partial<{ costmap: Costmap; robotPose: Vector; gpsLocation: LatLon; gpsTravelGoalPoints: LatLon[]; path: Path }> = {};
+      const state: Partial<{
+        costmap: Costmap;
+        robotPose: Vector;
+        gpsLocation: LatLon;
+        gpsTravelGoalPoints: LatLon[];
+        zoneMarkers: ZoneMarker[];
+        path: Path;
+      }> = {};
 
       if (data.costmap != undefined) {
         state.costmap = Costmap.decode(data.costmap);
@@ -55,6 +84,12 @@ export default class Connection {
       }
       if (data.gps_location != undefined) {
         state.gpsLocation = data.gps_location;
+      }
+      if (data.gps_travel_goal_points != undefined) {
+        state.gpsTravelGoalPoints = data.gps_travel_goal_points;
+      }
+      if (data.zone_markers != undefined) {
+        state.zoneMarkers = data.zone_markers.map((zoneMarker) => ZoneMarker.decode(zoneMarker));
       }
       if (data.path != undefined) {
         state.path = Path.decode(data.path);

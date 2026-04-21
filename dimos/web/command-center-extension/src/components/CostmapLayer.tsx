@@ -8,23 +8,43 @@ interface CostmapLayerProps {
   costmap: Costmap;
   width: number;
   height: number;
+  worldToPx?: (x: number, y: number) => [number, number];
 }
 
-const CostmapLayer = React.memo<CostmapLayerProps>(({ costmap, width, height }) => {
+const CostmapLayer = React.memo<CostmapLayerProps>(({ costmap, width, height, worldToPx }) => {
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const { grid, origin, resolution } = costmap;
-  const rows = Math.max(1, grid.shape[0] || 1);
-  const cols = Math.max(1, grid.shape[1] || 1);
+  const rows = Math.max(1, grid.shape[0] ?? 1);
+  const cols = Math.max(1, grid.shape[1] ?? 1);
 
   const axisMargin = { left: 60, bottom: 40 };
   const availableWidth = Math.max(1, width - axisMargin.left);
   const availableHeight = Math.max(1, height - axisMargin.bottom);
 
-  const cell = Math.max(0, Math.min(availableWidth / cols, availableHeight / rows));
-  const gridW = Math.max(0, cols * cell);
-  const gridH = Math.max(0, rows * cell);
-  const offsetX = axisMargin.left + (availableWidth - gridW) / 2;
-  const offsetY = (availableHeight - gridH) / 2;
+  let gridW: number;
+  let gridH: number;
+  let offsetX: number;
+  let offsetY: number;
+
+  if (worldToPx) {
+    const minX = origin.coords[0]!;
+    const minY = origin.coords[1]!;
+    const maxX = minX + cols * resolution;
+    const maxY = minY + rows * resolution;
+    const [left, bottom] = worldToPx(minX, minY);
+    const [right, top] = worldToPx(maxX, maxY);
+
+    offsetX = left;
+    offsetY = top;
+    gridW = Math.max(0, right - left);
+    gridH = Math.max(0, bottom - top);
+  } else {
+    const cell = Math.max(0, Math.min(availableWidth / cols, availableHeight / rows));
+    gridW = Math.max(0, cols * cell);
+    gridH = Math.max(0, rows * cell);
+    offsetX = axisMargin.left + (availableWidth - gridW) / 2;
+    offsetY = (availableHeight - gridH) / 2;
+  }
 
   // Pre-compute color lookup table using exact D3 colors (computed once on mount)
   const colorLookup = React.useMemo(() => {
@@ -80,7 +100,7 @@ const CostmapLayer = React.memo<CostmapLayerProps>(({ costmap, width, height }) 
     const expectedLength = rows * cols;
     if (grid.data.length !== expectedLength) {
       console.warn(
-        `Grid data length mismatch: expected ${expectedLength}, got ${grid.data.length} (rows=${rows}, cols=${cols})`
+        `Grid data length mismatch: expected ${expectedLength}, got ${grid.data.length} (rows=${rows}, cols=${cols})`,
       );
     }
 

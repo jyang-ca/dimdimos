@@ -1,4 +1,4 @@
-import * as pako from 'pako';
+import * as pako from "pako";
 
 export interface EncodedOptimizedGrid {
   update_type: "full" | "delta";
@@ -15,19 +15,19 @@ export interface EncodedOptimizedGrid {
 }
 
 export class OptimizedGrid {
-  private fullGrid: Uint8Array | null = null;
-  private shape: [number, number] = [0, 0];
+  #fullGrid: Uint8Array | null = null;
+  #shape: [number, number] = [0, 0];
 
   decode(msg: EncodedOptimizedGrid): Float32Array {
     if (msg.update_type === "full") {
-      return this.decodeFull(msg);
+      return this.#decodeFull(msg);
     } else {
-      return this.decodeDelta(msg);
+      return this.#decodeDelta(msg);
     }
   }
 
-  private decodeFull(msg: EncodedOptimizedGrid): Float32Array {
-    if (!msg.data) {
+  #decodeFull(msg: EncodedOptimizedGrid): Float32Array {
+    if (msg.data == undefined) {
       throw new Error("Missing data for full update");
     }
 
@@ -46,8 +46,8 @@ export class OptimizedGrid {
     }
 
     // Store for delta updates
-    this.fullGrid = decompressed;
-    this.shape = msg.shape;
+    this.#fullGrid = decompressed;
+    this.#shape = msg.shape;
 
     // Convert uint8 back to float32 costmap values
     const float32Data = new Float32Array(decompressed.length);
@@ -60,14 +60,14 @@ export class OptimizedGrid {
     return float32Data;
   }
 
-  private decodeDelta(msg: EncodedOptimizedGrid): Float32Array {
-    if (!this.fullGrid) {
+  #decodeDelta(msg: EncodedOptimizedGrid): Float32Array {
+    if (this.#fullGrid == undefined) {
       console.warn("No full grid available for delta update - skipping until full update arrives");
       const size = msg.shape[0] * msg.shape[1];
       return new Float32Array(size).fill(-1);
     }
 
-    if (!msg.chunks) {
+    if (msg.chunks == undefined) {
       throw new Error("Missing chunks for delta update");
     }
 
@@ -91,23 +91,23 @@ export class OptimizedGrid {
       }
 
       // Update the full grid with chunk data
-      const width = this.shape[1];
+      const width = this.#shape[1];
       let chunkIdx = 0;
       for (let cy = 0; cy < h; cy++) {
         for (let cx = 0; cx < w; cx++) {
           const gridIdx = (y + cy) * width + (x + cx);
           const val = decompressed[chunkIdx++];
-          if (val !== undefined) {
-            this.fullGrid[gridIdx] = val;
+          if (val != undefined) {
+            this.#fullGrid[gridIdx] = val;
           }
         }
       }
     }
 
     // Convert to float32
-    const float32Data = new Float32Array(this.fullGrid.length);
-    for (let i = 0; i < this.fullGrid.length; i++) {
-      const val = this.fullGrid[i]!;
+    const float32Data = new Float32Array(this.#fullGrid.length);
+    for (let i = 0; i < this.#fullGrid.length; i++) {
+      const val = this.#fullGrid[i]!;
       float32Data[i] = val === 255 ? -1 : val;
     }
 
@@ -115,6 +115,6 @@ export class OptimizedGrid {
   }
 
   getShape(): [number, number] {
-    return this.shape;
+    return this.#shape;
   }
 }

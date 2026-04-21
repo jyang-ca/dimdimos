@@ -1,12 +1,12 @@
 import * as React from "react";
 
+import Button from "./Button";
 import Connection from "./Connection";
 import ExplorePanel from "./ExplorePanel";
 import GpsButton from "./GpsButton";
-import Button from "./Button";
 import KeyboardControlPanel from "./KeyboardControlPanel";
-import VisualizerWrapper from "./components/VisualizerWrapper";
 import LeafletMap from "./components/LeafletMap";
+import VisualizerWrapper from "./components/VisualizerWrapper";
 import { AppAction, AppState, LatLon } from "./types";
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -19,6 +19,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, gpsLocation: action.payload };
     case "SET_GPS_TRAVEL_GOAL_POINTS":
       return { ...state, gpsTravelGoalPoints: action.payload };
+    case "SET_ZONE_MARKERS":
+      return { ...state, zoneMarkers: action.payload };
     case "SET_PATH":
       return { ...state, path: action.payload };
     case "SET_FULL_STATE":
@@ -33,6 +35,7 @@ const initialState: AppState = {
   robotPose: null,
   gpsLocation: null,
   gpsTravelGoalPoints: null,
+  zoneMarkers: null,
   path: null,
 };
 
@@ -112,12 +115,20 @@ export default function App(): React.ReactElement {
         }}
       >
         <GpsButton
-          onUseGps={() => setIsGpsMode(true)}
-          onUseCostmap={() => setIsGpsMode(false)}
+          onUseGps={() => {
+            setIsGpsMode(true);
+          }}
+          onUseCostmap={() => {
+            setIsGpsMode(false);
+          }}
         ></GpsButton>
         <ExplorePanel onStartExplore={handleStartExplore} onStopExplore={handleStopExplore} />
-        <Button onClick={handleReturnHome} isActive={false}>Go Home</Button>
-        <Button onClick={handleStop} isActive={false}>Stop</Button>
+        <Button onClick={handleReturnHome} isActive={false}>
+          Go Home
+        </Button>
+        <Button onClick={handleStop} isActive={false}>
+          Stop
+        </Button>
         <KeyboardControlPanel
           onSendMoveCommand={handleSendMoveCommand}
           onStopMoveCommand={handleStopMoveCommand}
