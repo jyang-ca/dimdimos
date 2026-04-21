@@ -94,9 +94,17 @@ class WebsocketVisModule(Module):
     gps_location: In[LatLon]
     path: In[Path]
     global_costmap: In[OccupancyGrid]
+    drone_odom: In[PoseStamped]
+    drone_path: In[Path]
+    drone_global_costmap: In[OccupancyGrid]
+    go2_odom: In[PoseStamped]
+    go2_path: In[Path]
+    go2_global_costmap: In[OccupancyGrid]
 
     # LCM outputs
     goal_request: Out[PoseStamped]
+    drone_goal_request: Out[PoseStamped]
+    go2_goal_request: Out[PoseStamped]
     gps_goal: Out[LatLon]
     explore_cmd: Out[Bool]
     stop_explore_cmd: Out[Bool]
@@ -129,6 +137,13 @@ class WebsocketVisModule(Module):
         self.vis_state: dict[str, Any] = {}
         self.state_lock = threading.Lock()
         self.costmap_encoder = OptimizedCostmapEncoder(chunk_size=64)
+        self.robot_costmap_encoders = {
+            "drone": OptimizedCostmapEncoder(chunk_size=64),
+            "go2": OptimizedCostmapEncoder(chunk_size=64),
+        }
+        self.robot_vis_state: dict[str, dict[str, Any]] = {}
+        self._latest_costmap: OccupancyGrid | None = None
+        self._latest_robot_costmaps: dict[str, OccupancyGrid] = {}
 
         # Track GPS goal points for visualization
         self.gps_goal_points: list[dict[str, float]] = []
@@ -200,6 +215,19 @@ class WebsocketVisModule(Module):
             self._disposables.add(Disposable(unsub))
         except Exception:
             ...
+
+        self._try_subscribe(self.drone_odom, lambda msg: self._on_robot_pose_for("drone", msg))
+        self._try_subscribe(self.drone_path, lambda msg: self._on_path_for("drone", msg))
+        self._try_subscribe(
+            self.drone_global_costmap,
+            lambda msg: self._on_global_costmap_for("drone", msg),
+        )
+        self._try_subscribe(self.go2_odom, lambda msg: self._on_robot_pose_for("go2", msg))
+        self._try_subscribe(self.go2_path, lambda msg: self._on_path_for("go2", msg))
+        self._try_subscribe(
+            self.go2_global_costmap,
+            lambda msg: self._on_global_costmap_for("go2", msg),
+        )
 
     @rpc
     def stop(self) -> None:
@@ -277,6 +305,8 @@ class WebsocketVisModule(Module):
         async def connect(sid, environ) -> None:  # type: ignore[no-untyped-def]
             with self.state_lock:
                 current_state = dict(self.vis_state)
+                latest_costmap = self._latest_costmap
+                latest_robot_costmaps = dict(self._latest_robot_costmaps)
 
             # Include GPS goal points in the initial state
             if self.gps_goal_points:
@@ -284,6 +314,25 @@ class WebsocketVisModule(Module):
 
             # Force full costmap update on new connection
             self.costmap_encoder.last_full_grid = None
+            for encoder in self.robot_costmap_encoders.values():
+                encoder.last_full_grid = None
+            if latest_costmap is not None:
+                current_state["costmap"] = self._process_costmap(latest_costmap, force_full=True)
+            if latest_robot_costmaps:
+                robots = dict(current_state.get("robots", {}))
+                for robot, costmap in latest_robot_costmaps.items():
+                    encoder = self.robot_costmap_encoders.setdefault(
+                        robot,
+                        OptimizedCostmapEncoder(chunk_size=64),
+                    )
+                    robot_state = dict(robots.get(robot, {}))
+                    robot_state["costmap"] = self._process_costmap(
+                        costmap,
+                        encoder=encoder,
+                        force_full=True,
+                    )
+                    robots[robot] = robot_state
+                current_state["robots"] = robots
 
             await self.sio.emit("full_state", current_state, room=sid)  # type: ignore[union-attr]
             await self.sio.emit("zone_markers", self._zone_markers_payload(), room=sid)  # type: ignore[union-attr]
@@ -301,6 +350,30 @@ class WebsocketVisModule(Module):
             self.goal_request.publish(goal)
             logger.info(
                 "Click goal published", x=round(goal.position.x, 3), y=round(goal.position.y, 3)
+            )
+
+        @self.sio.event  # type: ignore[untyped-decorator]
+        async def robot_click(sid: str, payload: dict[str, Any]) -> None:
+            robot = str(payload.get("robot", ""))
+            position = payload.get("position")
+            if robot not in {"drone", "go2"} or not isinstance(position, list) or len(position) < 2:
+                logger.warning("Ignoring invalid robot click payload", payload=payload)
+                return
+
+            goal = PoseStamped(
+                position=(position[0], position[1], 0),
+                orientation=(0, 0, 0, 1),
+                frame_id="world",
+            )
+            if robot == "drone":
+                self.drone_goal_request.publish(goal)
+            else:
+                self.go2_goal_request.publish(goal)
+            logger.info(
+                "Robot click goal published",
+                robot=robot,
+                x=round(goal.position.x, 3),
+                y=round(goal.position.y, 3),
             )
 
         @self.sio.event  # type: ignore[untyped-decorator]
@@ -363,6 +436,13 @@ class WebsocketVisModule(Module):
                 )
                 self.movecmd_stamped.publish(twist_stamped)
 
+    def _try_subscribe(self, stream: In[Any], callback: Any) -> None:
+        try:
+            unsub = stream.subscribe(callback)
+            self._disposables.add(Disposable(unsub))
+        except Exception:
+            ...
+
     def _run_uvicorn_server(self) -> None:
         config = uvicorn.Config(
             self.app,  # type: ignore[arg-type]
@@ -390,9 +470,39 @@ class WebsocketVisModule(Module):
         self._emit("path", path_data)
 
     def _on_global_costmap(self, msg: OccupancyGrid) -> None:
+        with self.state_lock:
+            self._latest_costmap = msg
         costmap_data = self._process_costmap(msg)
         self.vis_state["costmap"] = costmap_data
         self._emit("costmap", costmap_data)
+
+    def _on_robot_pose_for(self, robot: str, msg: PoseStamped) -> None:
+        pose_data = {"type": "vector", "c": [msg.position.x, msg.position.y, msg.position.z]}
+        self._set_robot_state(robot, "robot_pose", pose_data)
+        self._emit("robot_pose_named", {"robot": robot, "pose": pose_data})
+
+    def _on_path_for(self, robot: str, msg: Path) -> None:
+        points = [[pose.position.x, pose.position.y] for pose in msg.poses]
+        path_data = {"type": "path", "points": points}
+        self._set_robot_state(robot, "path", path_data)
+        self._emit("robot_path", {"robot": robot, "path": path_data})
+
+    def _on_global_costmap_for(self, robot: str, msg: OccupancyGrid) -> None:
+        with self.state_lock:
+            self._latest_robot_costmaps[robot] = msg
+        encoder = self.robot_costmap_encoders.setdefault(
+            robot,
+            OptimizedCostmapEncoder(chunk_size=64),
+        )
+        costmap_data = self._process_costmap(msg, encoder=encoder)
+        self._set_robot_state(robot, "costmap", costmap_data)
+        self._emit("robot_costmap", {"robot": robot, "costmap": costmap_data})
+
+    def _set_robot_state(self, robot: str, key: str, value: Any) -> None:
+        with self.state_lock:
+            robot_state = self.robot_vis_state.setdefault(robot, {})
+            robot_state[key] = value
+            self.vis_state["robots"] = self.robot_vis_state
 
     def _zone_markers_payload(self) -> list[dict[str, Any]]:
         return [
@@ -407,10 +517,19 @@ class WebsocketVisModule(Module):
             for zone in DEFAULT_ZONE_DEFINITIONS
         ]
 
-    def _process_costmap(self, costmap: OccupancyGrid) -> dict[str, Any]:
+    def _process_costmap(
+        self,
+        costmap: OccupancyGrid,
+        *,
+        encoder: OptimizedCostmapEncoder | None = None,
+        force_full: bool = False,
+    ) -> dict[str, Any]:
         """Convert OccupancyGrid to visualization format."""
         costmap = gradient(simple_inflate(costmap, 0.1), max_distance=1.0)
-        grid_data = self.costmap_encoder.encode_costmap(costmap.grid)
+        grid_data = (encoder or self.costmap_encoder).encode_costmap(
+            costmap.grid,
+            force_full=force_full,
+        )
 
         return {
             "type": "costmap",

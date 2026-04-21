@@ -1,11 +1,18 @@
 import * as React from "react";
 
-import { AppState } from "../types";
+import { Costmap, Path, Vector, ZoneMarker } from "../types";
 import VisualizerComponent from "./VisualizerComponent";
 import { buildWorldTransform, collectDisplayPoints } from "./worldTransform";
 
+export interface VisualizerData {
+  costmap: Costmap | null;
+  robotPose: Vector | null;
+  zoneMarkers: ZoneMarker[] | null;
+  path: Path | null;
+}
+
 interface VisualizerWrapperProps {
-  data: AppState;
+  data: VisualizerData;
   onWorldClick: (worldX: number, worldY: number) => void;
 }
 

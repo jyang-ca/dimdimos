@@ -27,6 +27,7 @@ __getattr__, __dir__, __all__ = lazy.attach(
         "agentic.unitree_go2_agentic_ollama": ["unitree_go2_agentic_ollama"],
         "agentic.unitree_go2_temporal_memory": ["unitree_go2_temporal_memory"],
         "basic.unitree_go2_basic": ["_linux", "_mac", "unitree_go2_basic"],
+        "sim.drone_go2_lidar_fusion_sim": ["drone_go2_lidar_fusion_sim"],
         "smart._with_jpeg": ["_with_jpeglcm"],
         "smart.unitree_go2": ["unitree_go2"],
         "smart.unitree_go2_detection": ["unitree_go2_detection"],

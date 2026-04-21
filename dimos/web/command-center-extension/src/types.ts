@@ -71,13 +71,17 @@ export class Costmap {
     this.origin_theta = origin_theta;
   }
 
-  static #decoder: OptimizedGrid | null = null;
+  static #decoders = new Map<string, OptimizedGrid>();
 
-  static decode(data: EncodedCostmap): Costmap {
-    // Use a singleton decoder to maintain state for delta updates
-    Costmap.#decoder ??= new OptimizedGrid();
+  static decode(data: EncodedCostmap, channel = "default"): Costmap {
+    // Use one decoder per stream so delta updates from split robot maps do not share state.
+    let decoder = Costmap.#decoders.get(channel);
+    if (!decoder) {
+      decoder = new OptimizedGrid();
+      Costmap.#decoders.set(channel, decoder);
+    }
 
-    const float32Data = Costmap.#decoder.decode(data.grid);
+    const float32Data = decoder.decode(data.grid);
     const shape = data.grid.shape;
 
     // Create a Grid object from the decoded data
@@ -107,6 +111,7 @@ export interface FullStateData {
   gps_travel_goal_points?: LatLon[];
   zone_markers?: EncodedZoneMarker[];
   path?: EncodedPath;
+  robots?: Record<string, EncodedRobotVisualizationState>;
 }
 
 export interface TwistCommand {
@@ -129,6 +134,19 @@ export interface AppState {
   gpsTravelGoalPoints: LatLon[] | null;
   zoneMarkers: ZoneMarker[] | null;
   path: Path | null;
+  robots: Record<string, RobotVisualizationState>;
+}
+
+export interface EncodedRobotVisualizationState {
+  costmap?: EncodedCostmap;
+  robot_pose?: EncodedVector;
+  path?: EncodedPath;
+}
+
+export interface RobotVisualizationState {
+  costmap: Costmap | null;
+  robotPose: Vector | null;
+  path: Path | null;
 }
 
 export type AppAction =
@@ -138,4 +156,7 @@ export type AppAction =
   | { type: "SET_GPS_TRAVEL_GOAL_POINTS"; payload: LatLon[] }
   | { type: "SET_ZONE_MARKERS"; payload: ZoneMarker[] }
   | { type: "SET_PATH"; payload: Path }
+  | { type: "SET_NAMED_ROBOT_COSTMAP"; robot: string; payload: Costmap }
+  | { type: "SET_NAMED_ROBOT_POSE"; robot: string; payload: Vector }
+  | { type: "SET_NAMED_ROBOT_PATH"; robot: string; payload: Path }
   | { type: "SET_FULL_STATE"; payload: Partial<AppState> };

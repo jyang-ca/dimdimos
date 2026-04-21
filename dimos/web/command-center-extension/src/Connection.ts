@@ -10,6 +10,7 @@ import {
   FullStateData,
   LatLon,
   Path,
+  RobotVisualizationState,
   TwistCommand,
   Vector,
   ZoneMarker,
@@ -43,9 +44,19 @@ export default class Connection {
       this.dispatch({ type: "SET_COSTMAP", payload: costmap });
     });
 
+    this.socket.on("robot_costmap", (data: { robot: string; costmap: EncodedCostmap }) => {
+      const costmap = Costmap.decode(data.costmap, data.robot);
+      this.dispatch({ type: "SET_NAMED_ROBOT_COSTMAP", robot: data.robot, payload: costmap });
+    });
+
     this.socket.on("robot_pose", (data: EncodedVector) => {
       const robotPose = Vector.decode(data);
       this.dispatch({ type: "SET_ROBOT_POSE", payload: robotPose });
+    });
+
+    this.socket.on("robot_pose_named", (data: { robot: string; pose: EncodedVector }) => {
+      const robotPose = Vector.decode(data.pose);
+      this.dispatch({ type: "SET_NAMED_ROBOT_POSE", robot: data.robot, payload: robotPose });
     });
 
     this.socket.on("gps_location", (data: LatLon) => {
@@ -66,6 +77,11 @@ export default class Connection {
       this.dispatch({ type: "SET_PATH", payload: path });
     });
 
+    this.socket.on("robot_path", (data: { robot: string; path: EncodedPath }) => {
+      const path = Path.decode(data.path);
+      this.dispatch({ type: "SET_NAMED_ROBOT_PATH", robot: data.robot, payload: path });
+    });
+
     this.socket.on("full_state", (data: FullStateData) => {
       const state: Partial<{
         costmap: Costmap;
@@ -74,6 +90,7 @@ export default class Connection {
         gpsTravelGoalPoints: LatLon[];
         zoneMarkers: ZoneMarker[];
         path: Path;
+        robots: Record<string, RobotVisualizationState>;
       }> = {};
 
       if (data.costmap != undefined) {
@@ -94,6 +111,18 @@ export default class Connection {
       if (data.path != undefined) {
         state.path = Path.decode(data.path);
       }
+      if (data.robots != undefined) {
+        state.robots = {};
+        for (const [robot, robotData] of Object.entries(data.robots)) {
+          state.robots[robot] = {
+            costmap:
+              robotData.costmap != undefined ? Costmap.decode(robotData.costmap, robot) : null,
+            robotPose:
+              robotData.robot_pose != undefined ? Vector.decode(robotData.robot_pose) : null,
+            path: robotData.path != undefined ? Path.decode(robotData.path) : null,
+          };
+        }
+      }
 
       this.dispatch({ type: "SET_FULL_STATE", payload: state });
     });
@@ -101,6 +130,10 @@ export default class Connection {
 
   worldClick(worldX: number, worldY: number): void {
     this.socket.emit("click", [worldX, worldY]);
+  }
+
+  robotWorldClick(robot: string, worldX: number, worldY: number): void {
+    this.socket.emit("robot_click", { robot, position: [worldX, worldY] });
   }
 
   startExplore(): void {

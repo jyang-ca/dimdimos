@@ -6,8 +6,12 @@ import ExplorePanel from "./ExplorePanel";
 import GpsButton from "./GpsButton";
 import KeyboardControlPanel from "./KeyboardControlPanel";
 import LeafletMap from "./components/LeafletMap";
-import VisualizerWrapper from "./components/VisualizerWrapper";
-import { AppAction, AppState, LatLon } from "./types";
+import VisualizerWrapper, { VisualizerData } from "./components/VisualizerWrapper";
+import { AppAction, AppState, LatLon, RobotVisualizationState } from "./types";
+
+function emptyRobotState(): RobotVisualizationState {
+  return { costmap: null, robotPose: null, path: null };
+}
 
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -23,6 +27,36 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, zoneMarkers: action.payload };
     case "SET_PATH":
       return { ...state, path: action.payload };
+    case "SET_NAMED_ROBOT_COSTMAP": {
+      const previous = state.robots[action.robot] ?? emptyRobotState();
+      return {
+        ...state,
+        robots: {
+          ...state.robots,
+          [action.robot]: { ...previous, costmap: action.payload },
+        },
+      };
+    }
+    case "SET_NAMED_ROBOT_POSE": {
+      const previous = state.robots[action.robot] ?? emptyRobotState();
+      return {
+        ...state,
+        robots: {
+          ...state.robots,
+          [action.robot]: { ...previous, robotPose: action.payload },
+        },
+      };
+    }
+    case "SET_NAMED_ROBOT_PATH": {
+      const previous = state.robots[action.robot] ?? emptyRobotState();
+      return {
+        ...state,
+        robots: {
+          ...state.robots,
+          [action.robot]: { ...previous, path: action.payload },
+        },
+      };
+    }
     case "SET_FULL_STATE":
       return { ...state, ...action.payload };
     default:
@@ -37,6 +71,7 @@ const initialState: AppState = {
   gpsTravelGoalPoints: null,
   zoneMarkers: null,
   path: null,
+  robots: {},
 };
 
 export default function App(): React.ReactElement {
@@ -57,6 +92,13 @@ export default function App(): React.ReactElement {
   const handleWorldClick = React.useCallback((worldX: number, worldY: number) => {
     connectionRef.current?.worldClick(worldX, worldY);
   }, []);
+
+  const handleRobotWorldClick = React.useCallback(
+    (robot: string, worldX: number, worldY: number) => {
+      connectionRef.current?.robotWorldClick(robot, worldX, worldY);
+    },
+    [],
+  );
 
   const handleStartExplore = React.useCallback(() => {
     connectionRef.current?.startExplore();
@@ -91,6 +133,22 @@ export default function App(): React.ReactElement {
     }
   }, [state.robotPose]);
 
+  const droneState = state.robots.drone ?? emptyRobotState();
+  const go2State = state.robots.go2 ?? emptyRobotState();
+  const hasSplitRobotMaps = Boolean(droneState.costmap || go2State.costmap);
+  const droneVisualizerData: VisualizerData = {
+    costmap: droneState.costmap,
+    robotPose: droneState.robotPose,
+    zoneMarkers: state.zoneMarkers,
+    path: droneState.path,
+  };
+  const go2VisualizerData: VisualizerData = {
+    costmap: go2State.costmap ?? state.costmap,
+    robotPose: go2State.robotPose ?? state.robotPose,
+    zoneMarkers: state.zoneMarkers,
+    path: go2State.path ?? state.path,
+  };
+
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
       {isGpsMode ? (
@@ -100,7 +158,24 @@ export default function App(): React.ReactElement {
           onGpsGoal={handleGpsGoal}
         />
       ) : (
-        <VisualizerWrapper data={state} onWorldClick={handleWorldClick} />
+        <>
+          {hasSplitRobotMaps ? (
+            <div style={{ display: "grid", gridTemplateRows: "1fr 1fr", width: "100%", height: "100%" }}>
+              <MapPane
+                label="Drone"
+                data={droneVisualizerData}
+                onWorldClick={(x, y) => handleRobotWorldClick("drone", x, y)}
+              />
+              <MapPane
+                label="Go2"
+                data={go2VisualizerData}
+                onWorldClick={(x, y) => handleRobotWorldClick("go2", x, y)}
+              />
+            </div>
+          ) : (
+            <VisualizerWrapper data={state} onWorldClick={handleWorldClick} />
+          )}
+        </>
       )}
       <div
         style={{
@@ -133,6 +208,38 @@ export default function App(): React.ReactElement {
           onSendMoveCommand={handleSendMoveCommand}
           onStopMoveCommand={handleStopMoveCommand}
         />
+      </div>
+    </div>
+  );
+}
+
+function MapPane({
+  label,
+  data,
+  onWorldClick,
+}: {
+  label: string;
+  data: VisualizerData;
+  onWorldClick: (worldX: number, worldY: number) => void;
+}): React.ReactElement {
+  return (
+    <div style={{ position: "relative", minHeight: 0, borderBottom: "1px solid #1f2937" }}>
+      <VisualizerWrapper data={data} onWorldClick={onWorldClick} />
+      <div
+        style={{
+          position: "absolute",
+          top: 8,
+          left: 8,
+          padding: "3px 7px",
+          border: "1px solid #334155",
+          background: "rgba(2, 6, 23, 0.78)",
+          color: "#e5e7eb",
+          fontSize: 12,
+          lineHeight: "16px",
+          pointerEvents: "none",
+        }}
+      >
+        {label}
       </div>
     </div>
   );
