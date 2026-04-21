@@ -236,4 +236,13 @@ def to_pose(value: PoseConvertable) -> Pose:
     return Pose(value)
 
 
+def _resolve_dispatch_registrations() -> None:
+    """Resolve plum registrations before high-rate LCM callbacks can race."""
+    zero_pose = Pose()
+    to_pose(zero_pose)
+
+
+_resolve_dispatch_registrations()
+
+
 PoseLike: TypeAlias = PoseConvertable | Pose
