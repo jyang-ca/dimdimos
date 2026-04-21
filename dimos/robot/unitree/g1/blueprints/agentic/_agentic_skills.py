@@ -16,8 +16,10 @@
 """Agentic skills used by higher-level G1 blueprints."""
 
 from dimos.agents.agent import agent
+from dimos.agents.autonomy.sensor_mission_monitor import sensor_mission_monitor
 from dimos.agents.skills.navigation import navigation_skill
 from dimos.agents.skills.speak_skill import speak_skill
+from dimos.agents.skills.zone_inspection import zone_inspection_skill
 from dimos.core.blueprints import autoconnect
 from dimos.robot.unitree.g1.skill_container import g1_skills
 from dimos.robot.unitree.g1.system_prompt import G1_SYSTEM_PROMPT
@@ -27,6 +29,8 @@ _agentic_skills = autoconnect(
     navigation_skill(),
     speak_skill(),
     g1_skills(),
+    zone_inspection_skill(),
+    sensor_mission_monitor(),
 )
 
 __all__ = ["_agentic_skills"]

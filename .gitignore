@@ -51,6 +51,9 @@ yolo11n.pt
 
 /thread_monitor_report.csv
 
+# Runtime zone inspection captures
+/temp/dimos_zone_inspections/
+
 # symlink one of .envrc.* if you'd like to use
 .envrc
 .claude
