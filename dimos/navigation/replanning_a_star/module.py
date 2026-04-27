@@ -35,6 +35,7 @@ class ReplanningAStarPlanner(Module, NavigationInterface):
     target: In[PoseStamped]
 
     goal_reached: Out[Bool]
+    recovery_goal_request: Out[PoseStamped]
     navigation_state: Out[String]  # TODO: set it
     cmd_vel: Out[Twist]
     path: Out[Path]
@@ -75,6 +76,9 @@ class ReplanningAStarPlanner(Module, NavigationInterface):
         self._disposables.add(self._planner.cmd_vel.subscribe(self.cmd_vel.publish))
 
         self._disposables.add(self._planner.goal_reached.subscribe(self.goal_reached.publish))
+        self._disposables.add(
+            self._planner.recovery_goal.subscribe(self.recovery_goal_request.publish)
+        )
 
         if "DEBUG_NAVIGATION" in os.environ:
             self._disposables.add(

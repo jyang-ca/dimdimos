@@ -19,5 +19,11 @@
 from dimos.robot.unitree.go2.blueprints.sim.drone_go2_lidar_fusion_sim import (
     drone_go2_lidar_fusion_sim,
 )
+from dimos.robot.unitree.go2.blueprints.sim.drone_go2_lidar_fusion_sim_agentic_mcp import (
+    drone_go2_lidar_fusion_sim_agentic_mcp,
+)
 
-__all__ = ["drone_go2_lidar_fusion_sim"]
+__all__ = [
+    "drone_go2_lidar_fusion_sim",
+    "drone_go2_lidar_fusion_sim_agentic_mcp",
+]

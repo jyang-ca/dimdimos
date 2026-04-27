@@ -49,6 +49,7 @@ _GO2_DRONE_OBSTACLE_LAYER = "go2/drone_obstacle_layer"
 _GO2_FUSED_GLOBAL_COSTMAP = "go2/fused_global_costmap"
 _GO2_PATH = "go2/path"
 _GO2_NAVIGATION_COSTMAP = "go2/navigation_costmap"
+_GO2_RECOVERY_GOAL_REQUEST = "go2/recovery_goal_request"
 
 _DRONE_LIDAR = "drone/lidar"
 _DRONE_ODOM = "drone/odom"
@@ -123,6 +124,7 @@ drone_go2_lidar_fusion_sim = (
             (Go2FusionPlanner, "odom", _GO2_ODOM),
             (Go2FusionPlanner, "global_costmap", _GO2_FUSED_GLOBAL_COSTMAP),
             (Go2FusionPlanner, "goal_request", _GO2_GOAL_REQUEST),
+            (Go2FusionPlanner, "recovery_goal_request", _GO2_RECOVERY_GOAL_REQUEST),
             (Go2FusionPlanner, "cmd_vel", _GO2_CMD_VEL),
             (Go2FusionPlanner, "path", _GO2_PATH),
             (Go2FusionPlanner, "navigation_costmap", _GO2_NAVIGATION_COSTMAP),

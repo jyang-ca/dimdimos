@@ -44,6 +44,7 @@ logger = setup_logger()
 class GlobalPlanner(Resource):
     path: Subject[Path]
     goal_reached: Subject[Bool]
+    recovery_goal: Subject[PoseStamped]
 
     _current_odom: PoseStamped | None = None
     _current_goal: PoseStamped | None = None
@@ -66,12 +67,14 @@ class GlobalPlanner(Resource):
     _rotation_tolerance: float = math.radians(15)
     _replan_goal_tolerance: float = 0.5
     _max_replan_attempts: int = 10
+    _auto_recovery_replan_threshold: int = 3
     _stuck_time_window: float = 8.0
     _max_path_deviation: float = 0.9
 
     def __init__(self, global_config: GlobalConfig) -> None:
         self.path = Subject()
         self.goal_reached = Subject()
+        self.recovery_goal = Subject()
 
         self._global_config = global_config
         self._navigation_map = NavigationMap(self._global_config)
@@ -271,7 +274,20 @@ class GlobalPlanner(Resource):
             return
 
         if not self._replan_limiter.can_retry(current_odom.position):
-            self.cancel_goal()
+            self._request_external_recovery(
+                current_goal,
+                "Replanning exhausted; requesting external recovery.",
+            )
+            return
+
+        if self._replan_limiter.get_attempt() >= self._auto_recovery_replan_threshold:
+            self._request_external_recovery(
+                current_goal,
+                (
+                    "Repeated replanning exceeded the auto-recovery threshold; "
+                    "requesting external recovery."
+                ),
+            )
             return
 
         self._replan_limiter.will_retry()
@@ -300,8 +316,9 @@ class GlobalPlanner(Resource):
         path = self._find_wide_path(safe_goal, current_odom.position)
 
         if not path:
-            logger.warning(
-                "No path found to the goal.", x=round(safe_goal.x, 3), y=round(safe_goal.y, 3)
+            self._request_external_recovery(
+                current_goal,
+                "No path found to the goal; requesting external recovery.",
             )
             return
 
@@ -354,3 +371,26 @@ class GlobalPlanner(Resource):
         logger.info("Found safe goal.", x=round(safe_goal.x, 2), y=round(safe_goal.y, 2))
 
         return safe_goal
+
+    def _request_external_recovery(self, goal: PoseStamped, message: str) -> None:
+        logger.info(
+            message,
+            x=round(goal.position.x, 2),
+            y=round(goal.position.y, 2),
+        )
+        self.recovery_goal.on_next(_copy_pose_stamped(goal))
+        self.cancel_goal()
+
+
+def _copy_pose_stamped(goal: PoseStamped) -> PoseStamped:
+    return PoseStamped(
+        ts=goal.ts,
+        frame_id=goal.frame_id,
+        position=(goal.position.x, goal.position.y, goal.position.z),
+        orientation=(
+            goal.orientation.x,
+            goal.orientation.y,
+            goal.orientation.z,
+            goal.orientation.w,
+        ),
+    )
