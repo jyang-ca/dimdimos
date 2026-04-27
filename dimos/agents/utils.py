@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlparse
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages.base import BaseMessage
@@ -34,6 +36,9 @@ RESET = "\033[0m"
 BOLD = "\033[1m"
 
 TYPE_WIDTH = 12
+_PLACEHOLDER_OPENAI_API_KEY = "dummy"
+_PLACEHOLDER_OPENAI_API_KEY_HOSTS = {"127.0.0.1", "0.0.0.0", "localhost", "::1"}
+_did_log_placeholder_key = False
 
 
 def pretty_print_langchain_message(msg: BaseMessage) -> None:
@@ -116,13 +121,40 @@ def _try_to_remove_url_data(content: Any) -> Any:
 
 def create_chat_model(model: str) -> Any:
     """Create the configured chat model for agents."""
+    chat_openai_kwargs = _chat_openai_kwargs()
+
     if model.startswith("openai:"):
         return ChatOpenAI(
             model=model.removeprefix("openai:"),
-            base_url=global_config.openai_base_url,
+            **chat_openai_kwargs,
         )
 
     if ":" in model and not model.startswith("gpt-"):
         return init_chat_model(model)
 
-    return ChatOpenAI(model=model, base_url=global_config.openai_base_url)
+    return ChatOpenAI(model=model, **chat_openai_kwargs)
+
+
+def _chat_openai_kwargs() -> dict[str, str]:
+    kwargs = {"base_url": global_config.openai_base_url}
+    api_key = os.getenv("OPENAI_API_KEY")
+    if api_key:
+        kwargs["api_key"] = api_key
+        return kwargs
+
+    if _should_use_placeholder_openai_api_key(global_config.openai_base_url):
+        global _did_log_placeholder_key
+        if not _did_log_placeholder_key:
+            logger.warning(
+                "OPENAI_API_KEY not set; using placeholder API key for local OpenAI-compatible endpoint.",
+                base_url=global_config.openai_base_url,
+            )
+            _did_log_placeholder_key = True
+        kwargs["api_key"] = _PLACEHOLDER_OPENAI_API_KEY
+
+    return kwargs
+
+
+def _should_use_placeholder_openai_api_key(base_url: str) -> bool:
+    host = urlparse(base_url).hostname
+    return host in _PLACEHOLDER_OPENAI_API_KEY_HOSTS
